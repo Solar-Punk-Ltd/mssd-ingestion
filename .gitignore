@@ -15,6 +15,7 @@ dist-test
 *.local
 yalc.lock
 .yalc
+coverage
 
 .vscode/*
 !.vscode/extensions.json
