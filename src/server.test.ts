@@ -13,11 +13,31 @@ describe('Server', () => {
     server.close()
   })
 
-  it('should respond with "Hello, World!"', async () => {
-    const response = await fetch('http://localhost:3001')
-    const text = await response.text()
+  it('should respond with "Hello, World!"', done => {
+    const options = {
+      hostname: 'localhost',
+      port: 3001,
+      path: '/',
+      method: 'GET',
+    }
 
-    expect(response.status).toBe(200)
-    expect(text).toBe('Hello, World!')
+    const req = http.request(options, res => {
+      let data = ''
+
+      res.on('data', chunk => {
+        data += chunk
+      })
+
+      res.on('end', () => {
+        expect(res.statusCode).toBe(200)
+        expect(data).toBe('Hello, World!')
+        done()
+      })
+    })
+
+    req.on('error', err => {
+      done(err)
+    })
+    req.end()
   })
 })
