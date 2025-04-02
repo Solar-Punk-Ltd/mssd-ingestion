@@ -1,3 +1,6 @@
-import { startServer } from './server'
+import { startRtmpServer } from './RTMPServer'
 
-startServer(3000)
+const mediaRootPath = process.argv[2] || './media' // Get from CLI or use default
+const ffmpegPath = process.argv[3]
+
+startRtmpServer(mediaRootPath, ffmpegPath)
