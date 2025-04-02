@@ -15,7 +15,11 @@
     "test:watch": "jest --watch --config jest.config.ts",
     "test:coverage": "jest --coverage --config jest.config.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@ethersphere/bee-js": "^9.0.3",
+    "@fairdatasociety/bmt-js": "^2.1.0",
+    "cafe-utility": "^27.14.2"
+  },
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",
     "@commitlint/config-conventional": "^19.8.0",

@@ -9,7 +9,6 @@ module.exports = {
     'plugin:import/errors',
     'plugin:import/warnings',
     'plugin:import/typescript',
-    'plugin:prettier/recommended',
   ],
   ignorePatterns: ['dist', 'node_modules', '.eslintrc.cjs'],
   rules: {
@@ -27,10 +26,11 @@ module.exports = {
       'error',
       {
         groups: [
-          ['^\\u0000'],
-          ['^\\.\\.(?!/?$)', '^\\.\\./?$'],
-          ['^\\./(?=.*/)(?!/?$)', '^\\.(?!/?$)', '^\\./?$'],
-          ['^.+\\.?(css)$'],
+          ['^@?\\w'], // Packages
+          ['^\\u0000'], // Side effect imports
+          ['^\\.\\.(?!/?$)', '^\\.\\./?$'], // Parent imports
+          ['^\\./(?=.*/)(?!/?$)', '^\\.(?!/?$)', '^\\./?$'], // Other relative imports
+          ['^.+\\.?(css)$'], // Style imports
         ],
       },
     ],
