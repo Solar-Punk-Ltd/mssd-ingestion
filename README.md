@@ -61,10 +61,10 @@ pnpm build
 
 ## Start the Server
 
-Start the RTMP server by specifying the media root directory and the FFmpeg binary path:
+Start the RTMP server by specifying the media root directory and optionally the FFmpeg binary path. If the FFmpeg binary path is not provided, the system's default FFmpeg will be used:
 
 ```bash
-node dist/index.js <MEDIAROOT_PATH> <FFMPEG_PATH>
+node dist/index.js <MEDIAROOT_PATH> [<FFMPEG_PATH>]
 ```
 
 > **Warning**: The `node-media-server` package may throw an error about an undefined version during startup. This is a known issue with the logging mechanism and does not affect the functionality of the server. The server will still operate correctly despite this error.

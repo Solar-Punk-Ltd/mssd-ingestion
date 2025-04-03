@@ -32,16 +32,19 @@ describe('startRtmpServer', () => {
     expect(mockRun).not.toHaveBeenCalled()
   })
 
-  it('should log an error if ffmpegPath is not provided', () => {
+  it('should log an error if ffmpegPath is not provided and FFmpeg is not installed', () => {
     console.error = jest.fn()
+    ;(execSync as jest.Mock).mockImplementation(() => {
+      throw new Error('FFmpeg not found')
+    })
 
     startRtmpServer('/path/to/media', '')
 
-    expect(console.error).toHaveBeenCalledWith('FFmpeg path is required.')
+    expect(console.error).toHaveBeenCalledWith('ffmpeg not found, path is required')
     expect(mockRun).not.toHaveBeenCalled()
   })
 
-  it('should log an error if FFmpeg is not installed', () => {
+  it('should log an error if FFmpeg is not installed or not found in the specified path', () => {
     console.error = jest.fn()
     ;(execSync as jest.Mock).mockImplementation(() => {
       throw new Error('FFmpeg not found')

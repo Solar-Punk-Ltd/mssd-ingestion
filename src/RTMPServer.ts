@@ -6,9 +6,17 @@ export function startRtmpServer(mediaRootPath: string, ffmpegPath: string): void
     console.error('Media root path is required.')
     return
   }
+  let ffmpegPathDefault = ''
   if (!ffmpegPath) {
-    console.error('FFmpeg path is required.')
-    return
+    // check if ffmpeg is installed
+    try {
+      ffmpegPathDefault = execSync('which ffmpeg').toString().trim()
+      ffmpegPath = ffmpegPathDefault
+      console.log('ffmpeg path is not provided, using default path:', ffmpegPath)
+    } catch (error) {
+      console.error('ffmpeg not found, path is required')
+      return
+    }
   }
   try {
     execSync(`${ffmpegPath} -version`, { stdio: 'ignore' })
