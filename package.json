@@ -15,7 +15,9 @@
     "test:watch": "jest --watch --config jest.config.ts",
     "test:coverage": "jest --coverage --config jest.config.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "node-media-server": "2.7.4"
+  },
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",
     "@commitlint/config-conventional": "^19.8.0",
