@@ -11,11 +11,13 @@ jest.mock('child_process', () => ({
 describe('startRtmpServer', () => {
   const mockRun = jest.fn()
   const mockStop = jest.fn()
+  const mockOn = jest.fn()
 
   beforeAll(() => {
     ;(NodeMediaServer as jest.Mock).mockImplementation(() => ({
       run: mockRun,
       stop: mockStop,
+      on: mockOn,
     }))
   })
 

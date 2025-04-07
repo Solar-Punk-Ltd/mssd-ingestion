@@ -53,5 +53,9 @@ export function startRtmpServer(mediaRootPath: string, ffmpegPath: string): void
     },
   })
 
+  server.on('prePublish', (id: string, streamPath: string, args: Record<string, any>) => {
+    console.log(`Stream published: id=${id}, streamPath=${streamPath}, args=${JSON.stringify(args)}`)
+  })
+
   server.run()
 }
