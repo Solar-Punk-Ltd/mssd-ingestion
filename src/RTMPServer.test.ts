@@ -11,16 +11,19 @@ jest.mock('child_process', () => ({
 describe('startRtmpServer', () => {
   const mockRun = jest.fn()
   const mockStop = jest.fn()
+  const mockOn = jest.fn()
 
   beforeAll(() => {
     ;(NodeMediaServer as jest.Mock).mockImplementation(() => ({
       run: mockRun,
       stop: mockStop,
+      on: mockOn,
     }))
   })
 
   beforeEach(() => {
     jest.clearAllMocks()
+    console.log = jest.fn()
   })
 
   it('should log an error if mediaRootPath is not provided', () => {
@@ -61,7 +64,7 @@ describe('startRtmpServer', () => {
 
     startRtmpServer('/path/to/media', '/path/to/ffmpeg')
 
-    expect(execSync).toHaveBeenCalledWith('/path/to/ffmpeg -version', { stdio: 'ignore' })
+    expect(execSync).toHaveBeenCalledWith('/path/to/ffmpeg -version')
     expect(NodeMediaServer).toHaveBeenCalledWith({
       logType: 4,
       rtmp: {
@@ -91,5 +94,19 @@ describe('startRtmpServer', () => {
       },
     })
     expect(mockRun).toHaveBeenCalled()
+  })
+
+  it('should handle prePublish event', () => {
+    startRtmpServer('/path/to/media', '/path/to/ffmpeg')
+
+    const mockCallback = mockOn.mock.calls.find(call => call[0] === 'prePublish')?.[1]
+    expect(mockCallback).toBeDefined()
+
+    if (mockCallback) {
+      mockCallback('123', '/live/stream', { key: 'value' })
+      expect(console.log).toHaveBeenCalledWith(
+        'Stream published: id=123, streamPath=/live/stream, args={"key":"value"}',
+      )
+    }
   })
 })

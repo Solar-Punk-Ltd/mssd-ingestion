@@ -19,7 +19,19 @@ export function startRtmpServer(mediaRootPath: string, ffmpegPath: string): void
     }
   }
   try {
-    execSync(`${ffmpegPath} -version`, { stdio: 'ignore' })
+    const ffmpegversion = execSync(`${ffmpegPath} -version`)
+
+    // Assigning the FFmpeg version to a global variable.
+    // This is required because the `NodeTransServer` in the `node-media-server`
+    // package internally references a `version` variable in its `run` method,
+    // and there is no direct way to inject it into the package's scope.
+    // Using `(global as any)` is a workaround to make the `version` variable
+    // accessible globally.
+    // Note: Consider refactoring if the `node-media-server` package
+    // provides a better way to handle this in the future.
+    if (ffmpegversion) {
+      ;(global as any).version = ffmpegversion.toString().trim()
+    }
   } catch (error) {
     console.error('FFmpeg is not installed or not found in the specified path.')
     return
@@ -51,6 +63,9 @@ export function startRtmpServer(mediaRootPath: string, ffmpegPath: string): void
         },
       ],
     },
+  })
+  server.on('prePublish', (id: string, streamPath: string, args: Record<string, any>) => {
+    console.log(`Stream published: id=${id}, streamPath=${streamPath}, args=${JSON.stringify(args)}`)
   })
 
   server.run()
