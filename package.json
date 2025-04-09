@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@ethersphere/bee-js": "^9.0.3",
-    "@fairdatasociety/bmt-js": "^2.1.0",
-    "cafe-utility": "^27.14.2",
-    "node-media-server": "2.7.4"
+    "chokidar": "^4.0.3",
+    "dotenv": "^16.4.7",
+    "node-media-server": "2.6.6"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",

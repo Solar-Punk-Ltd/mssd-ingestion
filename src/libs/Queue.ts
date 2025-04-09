@@ -1,4 +1,5 @@
-import { sleep } from './common';
+import { sleep } from '../utils/common';
+
 import { ErrorHandler } from './ErrorHandler';
 
 type Task = () => void | Promise<void>;
@@ -8,7 +9,7 @@ export class Queue {
   private isProcessing = false;
   private isWaiting = false;
   private clearWaitTime: number;
-  private errorHandler = new ErrorHandler();
+  private errorHandler = ErrorHandler.getInstance();
 
   constructor(
     settings: {
