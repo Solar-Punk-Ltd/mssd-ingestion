@@ -1,4 +1,5 @@
 import { execSync } from 'child_process'
+import crypto from 'crypto'
 import NodeMediaServer from 'node-media-server'
 
 export function startRtmpServer(mediaRootPath: string, ffmpegPath: string): void {
@@ -65,7 +66,27 @@ export function startRtmpServer(mediaRootPath: string, ffmpegPath: string): void
     },
   })
   server.on('prePublish', (id: string, streamPath: string, args: Record<string, any>) => {
-    console.log(`Stream published: id=${id}, streamPath=${streamPath}, args=${JSON.stringify(args)}`)
+    const session = server.getSession(id)
+    const { sign, exp } = args
+    const stream = streamPath.split('/')[2]
+    const secret = process.env['RTMP_SECRET']
+
+    if (!secret || !stream || !sign || !exp) {
+      console.log(`Unauthorized stream: id=${id}, streamPath=${streamPath}, missing parameters or RTMP_SECRET`)
+      session?.reject()
+      return
+    }
+
+    const hash = crypto.createHmac('sha256', secret).update(`${stream}?exp=${exp}`).digest('hex')
+    const currentTime = Math.floor(Date.now() / 1000)
+    console.log(currentTime)
+    console.log(parseInt(exp, 10))
+    if (hash !== sign || parseInt(exp, 10) < currentTime) {
+      console.log(`Unauthorized stream: id=${id}, streamPath=${streamPath}, invalid or expired signature`)
+      session?.reject()
+      return
+    }
+    console.log(`Stream authorized: id=${id}, streamPath=${streamPath}, args=${JSON.stringify(args)}`)
   })
 
   server.run()

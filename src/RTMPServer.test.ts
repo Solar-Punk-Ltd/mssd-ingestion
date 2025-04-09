@@ -12,12 +12,14 @@ describe('startRtmpServer', () => {
   const mockRun = jest.fn()
   const mockStop = jest.fn()
   const mockOn = jest.fn()
+  const mockGetSession = jest.fn()
 
   beforeAll(() => {
     ;(NodeMediaServer as jest.Mock).mockImplementation(() => ({
       run: mockRun,
       stop: mockStop,
       on: mockOn,
+      getSession: mockGetSession,
     }))
   })
 
@@ -96,7 +98,12 @@ describe('startRtmpServer', () => {
     expect(mockRun).toHaveBeenCalled()
   })
 
-  it('should handle prePublish event', () => {
+  it('should handle prePublish event when not authorized', () => {
+    const mockSession = {
+      reject: jest.fn(),
+    }
+    mockGetSession.mockReturnValue(mockSession)
+
     startRtmpServer('/path/to/media', '/path/to/ffmpeg')
 
     const mockCallback = mockOn.mock.calls.find(call => call[0] === 'prePublish')?.[1]
@@ -105,8 +112,10 @@ describe('startRtmpServer', () => {
     if (mockCallback) {
       mockCallback('123', '/live/stream', { key: 'value' })
       expect(console.log).toHaveBeenCalledWith(
-        'Stream published: id=123, streamPath=/live/stream, args={"key":"value"}',
+        'Unauthorized stream: id=123, streamPath=/live/stream, missing parameters or RTMP_SECRET',
       )
+      expect(mockGetSession).toHaveBeenCalledWith('123')
+      expect(mockSession.reject).toHaveBeenCalled()
     }
   })
 })
