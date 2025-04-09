@@ -16,10 +16,7 @@ jest.mock('./Queue', () => {
   };
 });
 
-const mockBee = {
-  uploadData: jest.fn().mockResolvedValue({ reference: { toHex: () => 'mockRef' } }),
-  gsocSend: jest.fn().mockResolvedValue({ reference: { toHex: () => 'gsocRef' } }),
-};
+import fs from 'fs';
 
 import { SwarmStreamUploader } from './SwarmStreamUploader';
 
@@ -32,9 +29,14 @@ describe('SwarmStreamUploader', () => {
     streamPath: '/mock/stream',
   };
 
+  const mockBee = {
+    uploadData: jest.fn().mockResolvedValue({ reference: { toHex: () => 'mockRef' } }),
+    gsocSend: jest.fn().mockResolvedValue({ reference: { toHex: () => 'gsocRef' } }),
+  };
+
   const createUploader = () =>
     new SwarmStreamUploader(
-      mockBee as any, // Mockround :)
+      mockBee as any,
       mockParams.manifestBeeUrl,
       mockParams.gsocKey,
       mockParams.gsocTopic,
@@ -44,6 +46,9 @@ describe('SwarmStreamUploader', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (fs.readFileSync as jest.Mock).mockReset();
+    (fs.writeFileSync as jest.Mock).mockReset();
+    (fs.rmSync as jest.Mock).mockReset();
   });
 
   it('should enqueue a segment upload', () => {
@@ -62,31 +67,46 @@ describe('SwarmStreamUploader', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('should call uploadSegment and upsert manifest on valid segment', async () => {
+  it('should call uploadSegment and update manifest', async () => {
     const uploader = createUploader();
 
-    const uploadSegmentMock = jest.spyOn(uploader as any, 'uploadSegment').mockResolvedValue('mockRef');
-
-    const upsertManifestMock = jest.spyOn(uploader as any, 'upsertManifest').mockImplementation(() => {});
-    const uploadManifestMock = jest.spyOn(uploader as any, 'uploadManifest').mockResolvedValue(undefined);
-    const rmProcessedSegmentMock = jest.spyOn(uploader as any, 'rmProcessedSegment').mockImplementation(() => {});
+    jest.spyOn(uploader as any, 'uploadSegment').mockResolvedValue('mockRef');
+    jest.spyOn(uploader as any, 'getExtInfFromFile').mockReturnValue(5.2);
+    jest.spyOn(uploader as any, 'uploadManifest').mockResolvedValue(undefined);
+    jest.spyOn(uploader as any, 'rmProcessedSegment').mockImplementation(() => {});
 
     await (uploader as any).upload('/mock/stream/seg.ts');
 
-    expect(uploadSegmentMock).toHaveBeenCalled();
-    expect(upsertManifestMock).toHaveBeenCalledWith('/mock/stream/seg.ts', 'mockRef');
-    expect(uploadManifestMock).toHaveBeenCalled();
-    expect(rmProcessedSegmentMock).toHaveBeenCalledWith('/mock/stream/seg.ts');
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      expect.stringContaining('playlist.m3u8'),
+      expect.stringContaining('#EXT-X-MEDIA-SEQUENCE:0'),
+    );
   });
 
-  it('should log error and skip if uploadSegment fails', async () => {
+  it('should increase media sequence and shift buffer', async () => {
+    const uploader = createUploader();
+
+    jest.spyOn(uploader as any, 'uploadSegment').mockResolvedValue('mockRef');
+    jest.spyOn(uploader as any, 'getExtInfFromFile').mockReturnValue(6.0);
+    jest.spyOn(uploader as any, 'uploadManifest').mockResolvedValue(undefined);
+    jest.spyOn(uploader as any, 'rmProcessedSegment').mockImplementation(() => {});
+
+    for (let i = 0; i < 22; i++) {
+      await (uploader as any).upload(`/mock/stream/seg${i}.ts`);
+    }
+
+    expect(uploader['segmentBuffer'].length).toBeLessThanOrEqual(20);
+    expect(uploader['mediaSequence']).toBe(2); // 2 segments trimmed off
+  });
+
+  it('should log error if uploadSegment fails', async () => {
     const uploader = createUploader();
 
     jest.spyOn(uploader as any, 'uploadSegment').mockResolvedValue(undefined);
-    const loggerErrorMock = jest.spyOn((uploader as any).logger, 'error');
+    const loggerError = jest.spyOn((uploader as any).logger, 'error');
 
     await (uploader as any).upload('/mock/stream/seg.ts');
 
-    expect(loggerErrorMock).toHaveBeenCalledWith(expect.stringMatching(/Failed to upload segment/));
+    expect(loggerError).toHaveBeenCalledWith(expect.stringMatching(/Failed to upload segment/));
   });
 });

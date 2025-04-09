@@ -79,7 +79,7 @@ describe('startRtmpServer', () => {
 
     expect(execSync).toHaveBeenCalledWith('/path/to/ffmpeg -version', { stdio: 'ignore' });
     expect(NodeMediaServer).toHaveBeenCalledWith({
-      logType: 4,
+      logType: 3,
       rtmp: {
         port: 1935,
         chunk_size: 60000,

@@ -11,10 +11,14 @@ import { Queue } from './Queue';
 export class SwarmStreamUploader {
   private swarmManifestName = 'playlist.m3u8';
   private origiManifestName = 'index.m3u8';
+  private MAX_SEGMENTS = 20;
+  private TARGET_DURATION = 6;
+  private mediaSequence = 0;
 
   private queue = new Queue();
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
+  private segmentBuffer: string[] = [];
 
   private bee: Bee;
   private manifestBeeUrl: string;
@@ -64,47 +68,45 @@ export class SwarmStreamUploader {
   }
 
   private upsertManifest(segmentPath: string, ref: string) {
-    const paths = segmentPath.split('/');
-    const filename = paths[paths.length - 1];
-
+    const filename = path.basename(segmentPath);
     const origiManifestPath = path.join(this.streamPath, this.origiManifestName);
     const swarmManifestPath = path.join(this.streamPath, this.swarmManifestName);
 
     const extInf = this.getExtInfFromFile(origiManifestPath, filename);
-
     if (!extInf) {
       this.logger.error(`Failed to get EXTINF for ${filename}`);
       return;
     }
 
-    const manifestLine = `#EXTINF:${extInf.toFixed(6)},\n${this.manifestBeeUrl}/bytes/${ref}`;
+    const segmentLine = this.buildSegmentEntry(extInf, ref);
+    this.segmentBuffer.push(segmentLine);
 
-    let manifestContent = '';
-
-    if (!fs.existsSync(swarmManifestPath)) {
-      const manifestHeader = this.extractBaseHeaderFrom(origiManifestPath);
-      manifestContent = `${manifestHeader}\n${manifestLine}\n`;
-      this.logger.log(`Manifest created with first segment: ${filename}`);
-    } else {
-      manifestContent = fs.readFileSync(swarmManifestPath, 'utf8').trimEnd();
-      manifestContent += `\n${manifestLine}`;
-      this.logger.log(`Segment appended to manifest: ${filename}`);
+    if (this.segmentBuffer.length > this.MAX_SEGMENTS) {
+      this.segmentBuffer.shift();
+      this.mediaSequence++;
     }
 
-    fs.writeFileSync(swarmManifestPath, manifestContent);
+    const manifest = this.buildManifest();
+    fs.writeFileSync(swarmManifestPath, manifest);
+
+    this.logger.log(`Manifest updated (seq=${this.mediaSequence}): ${filename}`);
   }
 
-  private extractBaseHeaderFrom(path: string): string {
-    const content = fs.readFileSync(path, 'utf-8');
-    const lines = content.split('\n');
+  private buildSegmentEntry(duration: number, ref: string): string {
+    return `#EXTINF:${duration.toFixed(6)},\n${this.manifestBeeUrl}/bytes/${ref}`;
+  }
 
-    const headerLines: string[] = [];
-    for (const line of lines) {
-      if (line.startsWith('#EXTINF')) break;
-      headerLines.push(line);
-    }
+  private buildManifest(): string {
+    const header = [
+      '#EXTM3U',
+      '#EXT-X-VERSION:3',
+      '#EXT-X-PLAYLIST-TYPE:EVENT',
+      '#EXT-X-ALLOW-CACHE:NO',
+      `#EXT-X-TARGETDURATION:${this.TARGET_DURATION}`,
+      `#EXT-X-MEDIA-SEQUENCE:${this.mediaSequence}`,
+    ];
 
-    return headerLines.join('\n');
+    return `${header.join('\n')}\n${this.segmentBuffer.join('\n')}\n`;
   }
 
   private getExtInfFromFile(path: string, segmentName: string): number | null {

@@ -36,7 +36,7 @@ export function startRtmpServer(mediaRootPath: string, ffmpegPath: string): void
   }
 
   const config = {
-    logType: 4,
+    logType: 3,
     rtmp: {
       port: 1935,
       chunk_size: 60000,
