@@ -1,21 +1,45 @@
-import { execSync } from 'child_process';
-import NodeMediaServer from 'node-media-server';
+const loggerMock = {
+  error: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+};
 
-import { startRtmpServer } from '../libs/RTMPServer';
+const errorHandlerMock = {
+  handleError: jest.fn(),
+};
+
+jest.mock('../libs/Logger', () => ({
+  Logger: {
+    getInstance: () => loggerMock,
+  },
+}));
+
+jest.mock('../libs/ErrorHandler', () => ({
+  ErrorHandler: {
+    getInstance: () => errorHandlerMock,
+  },
+}));
 
 jest.mock('node-media-server');
 jest.mock('child_process', () => ({
   execSync: jest.fn(),
 }));
 
+import { execSync } from 'child_process';
+import NodeMediaServer from 'node-media-server';
+
+import { startRtmpServer } from '../libs/RTMPServer';
+
 describe('startRtmpServer', () => {
   const mockRun = jest.fn();
   const mockStop = jest.fn();
+  const mockOn = jest.fn();
 
   beforeAll(() => {
     (NodeMediaServer as jest.Mock).mockImplementation(() => ({
       run: mockRun,
       stop: mockStop,
+      on: mockOn,
     }));
   });
 
@@ -24,32 +48,27 @@ describe('startRtmpServer', () => {
   });
 
   it('should log an error if mediaRootPath is not provided', () => {
-    console.error = jest.fn();
-
     startRtmpServer('', '/path/to/ffmpeg');
 
-    expect(console.error).toHaveBeenCalledWith('Media root path is required.');
+    expect(loggerMock.error).toHaveBeenCalledWith('Media root path is required.');
     expect(mockRun).not.toHaveBeenCalled();
   });
 
   it('should log an error if ffmpegPath is not provided', () => {
-    console.error = jest.fn();
-
     startRtmpServer('/path/to/media', '');
 
-    expect(console.error).toHaveBeenCalledWith('FFmpeg path is required.');
+    expect(loggerMock.error).toHaveBeenCalledWith('FFmpeg path is required.');
     expect(mockRun).not.toHaveBeenCalled();
   });
 
-  it('should log an error if FFmpeg is not installed', () => {
-    console.error = jest.fn();
+  it('should handle error if FFmpeg is not installed', () => {
     (execSync as jest.Mock).mockImplementation(() => {
       throw new Error('FFmpeg not found');
     });
 
     startRtmpServer('/path/to/media', '/path/to/ffmpeg');
 
-    expect(console.error).toHaveBeenCalledWith('FFmpeg is not installed or not found in the specified path.');
+    expect(loggerMock.error).toHaveBeenCalledWith('FFmpeg is not installed or not found at the specified path.');
     expect(mockRun).not.toHaveBeenCalled();
   });
 
@@ -80,9 +99,7 @@ describe('startRtmpServer', () => {
             app: 'live',
             hls: true,
             hlsKeep: true,
-            hlsFlags: '[hls_playlist_type=event:hls_time=5:hls_list_size=0]',
-            dash: true,
-            dashFlags: '[f=dash:window_size=3:extra_window_size=5]',
+            hlsFlags: '[hls_time=5:hls_list_size=20]',
           },
         ],
       },

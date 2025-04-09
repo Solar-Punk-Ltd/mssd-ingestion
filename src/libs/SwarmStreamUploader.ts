@@ -11,21 +11,22 @@ import { Queue } from './Queue';
 export class SwarmStreamUploader {
   private swarmManifestName = 'playlist.m3u8';
   private origiManifestName = 'index.m3u8';
+
   private queue = new Queue();
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
 
   private bee: Bee;
-  private beeUrl: string;
+  private manifestBeeUrl: string;
   private gsocSigner: PrivateKey;
   private gsocTopic: string;
   private stamp: string;
   private streamPath: string;
 
-  constructor(beeUrl: string, gsocKey: string, gsocTopic: string, stamp: string, streamPath: string) {
-    this.bee = new Bee(beeUrl);
-    this.beeUrl = beeUrl;
+  constructor(bee: Bee, manifestBeeUrl: string, gsocKey: string, gsocTopic: string, stamp: string, streamPath: string) {
+    this.bee = bee;
     this.gsocSigner = new PrivateKey(gsocKey);
+    this.manifestBeeUrl = manifestBeeUrl;
     this.gsocTopic = gsocTopic;
     this.stamp = stamp;
     this.streamPath = streamPath;
@@ -49,6 +50,17 @@ export class SwarmStreamUploader {
 
     this.upsertManifest(segmentPath, ref);
     await this.uploadManifest();
+
+    this.rmProcessedSegment(segmentPath);
+  }
+
+  private rmProcessedSegment(segmentPath: string) {
+    try {
+      fs.rmSync(segmentPath);
+      this.logger.log(`Deleted processed segment: ${segmentPath}`);
+    } catch (error) {
+      this.errorHandler.handleError(error, 'SwarmStreamUploader.deleteProcessedSegment');
+    }
   }
 
   private upsertManifest(segmentPath: string, ref: string) {
@@ -65,9 +77,7 @@ export class SwarmStreamUploader {
       return;
     }
 
-    // TODO: make this configurable
-    const url = 'https://rpc.swarmens.limo:8443';
-    const manifestLine = `#EXTINF:${extInf.toFixed(6)},\n${url}/bytes/${ref}`;
+    const manifestLine = `#EXTINF:${extInf.toFixed(6)},\n${this.manifestBeeUrl}/bytes/${ref}`;
 
     let manifestContent = '';
 
@@ -120,6 +130,7 @@ export class SwarmStreamUploader {
     try {
       const segmentData = fs.readFileSync(segmentPath);
       const result = await this.uploadDataToBee(segmentData);
+
       if (result) {
         this.logger.log(`Upload result: ${segmentPath}`, result.reference.toHex());
         return result.reference.toHex();
@@ -130,23 +141,24 @@ export class SwarmStreamUploader {
   }
 
   private async uploadManifest() {
-    const fullPath = path.join(this.streamPath, this.swarmManifestName);
-
     try {
+      const fullPath = path.join(this.streamPath, this.swarmManifestName);
       const manifestData = fs.readFileSync(fullPath);
+
       const result = await this.uploadDataAsSoc(manifestData);
       if (result) {
-        console.log('GSOC manifest upload:', result.reference.toHex()); // TODO logger fix
+        this.logger.log('GSOC manifest upload:', result.reference.toHex());
       }
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadManifest');
     }
   }
 
+  // Limitation, it has to be GSOC as overwritten SOCs are not distributed properly
   private async uploadDataAsSoc(data: Uint8Array) {
     try {
       const identifier = Identifier.fromString(this.gsocTopic);
-      return this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, data);
+      return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, data));
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadDataAsSoc');
       return null;
