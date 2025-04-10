@@ -34,12 +34,14 @@ describe('startRtmpServer', () => {
   const mockRun = jest.fn();
   const mockStop = jest.fn();
   const mockOn = jest.fn();
+  const mockGetSession = jest.fn();
 
   beforeAll(() => {
     (NodeMediaServer as jest.Mock).mockImplementation(() => ({
       run: mockRun,
       stop: mockStop,
       on: mockOn,
+      getSession: mockGetSession,
     }));
   });
 
@@ -49,35 +51,34 @@ describe('startRtmpServer', () => {
 
   it('should log an error if mediaRootPath is not provided', () => {
     startRtmpServer('', '/path/to/ffmpeg');
-
     expect(loggerMock.error).toHaveBeenCalledWith('Media root path is required.');
     expect(mockRun).not.toHaveBeenCalled();
   });
 
-  it('should log an error if ffmpegPath is not provided', () => {
-    startRtmpServer('/path/to/media', '');
-
-    expect(loggerMock.error).toHaveBeenCalledWith('FFmpeg path is required.');
-    expect(mockRun).not.toHaveBeenCalled();
-  });
-
-  it('should handle error if FFmpeg is not installed', () => {
+  it('should log an error if ffmpegPath is not provided and FFmpeg is not installed', () => {
     (execSync as jest.Mock).mockImplementation(() => {
       throw new Error('FFmpeg not found');
     });
 
-    startRtmpServer('/path/to/media', '/path/to/ffmpeg');
+    expect(() => startRtmpServer('/path/to/media', '')).toThrow('FFmpeg not found');
+    expect(loggerMock.error).toHaveBeenCalledWith('ffmpeg not found, path is required');
+  });
 
-    expect(loggerMock.error).toHaveBeenCalledWith('FFmpeg is not installed or not found at the specified path.');
-    expect(mockRun).not.toHaveBeenCalled();
+  it('should log an error if FFmpeg is not installed or not found in the specified path', () => {
+    (execSync as jest.Mock).mockImplementation(() => {
+      throw new Error('FFmpeg not found');
+    });
+
+    expect(() => startRtmpServer('/path/to/media', '/path/to/ffmpeg')).toThrow('FFmpeg not found');
+    expect(loggerMock.error).toHaveBeenCalledWith('FFmpeg is not installed or not found in the specified path.');
   });
 
   it('should start the NodeMediaServer if all parameters are valid', () => {
-    (execSync as jest.Mock).mockImplementation(() => {}); // Mock FFmpeg check to pass
+    (execSync as jest.Mock).mockImplementation(() => Buffer.from('ffmpeg version 2.7.4'));
 
     startRtmpServer('/path/to/media', '/path/to/ffmpeg');
 
-    expect(execSync).toHaveBeenCalledWith('/path/to/ffmpeg -version', { stdio: 'ignore' });
+    expect(execSync).toHaveBeenCalledWith('/path/to/ffmpeg -version');
     expect(NodeMediaServer).toHaveBeenCalledWith({
       logType: 3,
       rtmp: {
@@ -105,5 +106,27 @@ describe('startRtmpServer', () => {
       },
     });
     expect(mockRun).toHaveBeenCalled();
+  });
+
+  it('should handle prePublish event when not authorized', () => {
+    const mockSession = {
+      reject: jest.fn(),
+    };
+
+    mockGetSession.mockReturnValue(mockSession);
+    (execSync as jest.Mock).mockImplementation(() => Buffer.from('ffmpeg version 4.3'));
+
+    startRtmpServer('/path/to/media', '/path/to/ffmpeg');
+
+    const prePublishCallback = mockOn.mock.calls.find(call => call[0] === 'prePublish')?.[1];
+    expect(prePublishCallback).toBeDefined();
+
+    if (prePublishCallback) {
+      prePublishCallback('123', '/live/stream', { key: 'value' });
+
+      expect(loggerMock.error).toHaveBeenCalledWith('Unauthorized stream: missing parameters');
+      expect(mockGetSession).toHaveBeenCalledWith('123');
+      expect(mockSession.reject).toHaveBeenCalled();
+    }
   });
 });

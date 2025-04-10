@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch --config jest.config.ts",
-    "test:coverage": "jest --coverage --config jest.config.ts"
+    "test:coverage": "jest --coverage --config jest.config.ts",
+    "generate-stream-key": "node dist/scripts/genKey.js"
   },
   "dependencies": {
     "@ethersphere/bee-js": "^9.0.3",
