@@ -19,7 +19,7 @@
     "@ethersphere/bee-js": "^9.0.3",
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
-    "node-media-server": "2.6.6"
+    "node-media-server": "2.7.4"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",
@@ -28,6 +28,8 @@
     "@types/node": "^22.8.1",
     "@typescript-eslint/eslint-plugin": "^6.14.0",
     "@typescript-eslint/parser": "^6.14.0",
+    "commander": "^13.1.0",
+    "dayjs": "^1.11.13",
     "eslint": "^8.55.0",
     "eslint-config-prettier": "^8.10.0",
     "eslint-plugin-import": "^2.29.1",

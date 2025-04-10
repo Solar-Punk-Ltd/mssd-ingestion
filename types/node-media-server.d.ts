@@ -1,7 +1,6 @@
 declare module 'node-media-server' {
   interface NodeMediaServerConfig {
     logType?: number;
-    bind?: string;
     rtmp?: {
       port: number;
       chunk_size?: number;
@@ -24,7 +23,6 @@ declare module 'node-media-server' {
         dash?: boolean;
         dashFlags?: string;
       }>;
-      MediaRoot?: string;
     };
   }
 
@@ -32,7 +30,8 @@ declare module 'node-media-server' {
     constructor(config: NodeMediaServerConfig);
     run(): void;
     stop(): void;
-    on(...args: any[]): void;
+    on(event: string, callback: (...args: any[]) => void): void;
+    getSession(id: string): NodeRtmpSession;
   }
 
   export = NodeMediaServer;

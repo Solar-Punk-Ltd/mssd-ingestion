@@ -7,13 +7,14 @@
 3. [Pre-requisites](#pre-requisites)
 4. [Installation](#installation)
 5. [Build the Project](#build-the-project)
-6. [Start the Server](#start-the-server)
-7. [Send Test Data to the Server](#send-test-data-to-the-server)
-8. [HLS File Generation](#hls-file-generation)
-9. [Test HLS Files with VLC](#test-hls-files-with-vlc)
-10. [Example Workflow](#example-workflow)
-11. [Notes](#notes)
-12. [Contributing](#contributing)
+6. [Generate HMAC Key](#generate-hmac-key)
+7. [Start the Server](#start-the-server)
+8. [Send Test Data to the Server](#send-test-data-to-the-server)
+9. [HLS File Generation](#hls-file-generation)
+10. [Test HLS Files with VLC](#test-hls-files-with-vlc)
+11. [Example Workflow](#example-workflow)
+12. [Notes](#notes)
+13. [Contributing](#contributing)
 
 The `RTMPServer` class provides functionality to handle Real-Time Messaging Protocol (RTMP) connections. This class manages the server-side operations required to establish and maintain RTMP connections, process incoming streams, and generate HLS (HTTP Live Streaming) files.
 
@@ -59,15 +60,55 @@ To compile the TypeScript code into JavaScript, run:
 pnpm build
 ```
 
-## Start the Server
+## Generate HMAC Key
 
-Start the RTMP server by specifying the media root directory and the FFmpeg binary path:
+To generate a stream key, set the `RTMP_SECRET` environment variable. This key is used to sign the stream key for security purposes.
 
 ```bash
-node dist/index.js <MEDIAROOT_PATH> <FFMPEG_PATH>
+export RTMP_SECRET=your_secret_key
 ```
 
-> **Warning**: The `node-media-server` package may throw an error about an undefined version during startup. This is a known issue with the logging mechanism and does not affect the functionality of the server. The server will still operate correctly despite this error.
+Then, generate the stream key using the following command:
+
+```bash
+node dist/cli.js -s <STREAM_NAME> -e <Expires in N minutes>
+```
+
+For example, with the default 60-minute expiration:
+
+```bash
+node dist/cli -s test5
+```
+
+Output:
+
+```bash
+ OBS Stream Key:
+test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
+
+ Full RTMP URL example:
+rtmp://localhost/live/test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
+```
+
+The generated stream key is a combination of the stream name, an expiration time, and an HMAC signature for security. The `exp` parameter indicates the expiration time in seconds since the Unix epoch, and the `sign` parameter is the HMAC signature.
+
+You can add the generated stream key to the Stream Key field in OBS, for example:
+
+```bash
+test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
+```
+
+![OBS settings](./assets/obs.png)
+
+## Start the Server
+
+Start the RTMP server by specifying the media root directory and, optionally, the FFmpeg binary path. If the FFmpeg binary path is not provided, the system's default FFmpeg will be used:
+
+```bash
+node dist/index.js <MEDIAROOT_PATH> [<FFMPEG_PATH>]
+```
+
+> When starting the server, please ensure that the `RTMP_SECRET` environment variable is defined.
 
 ### Example
 
@@ -80,7 +121,7 @@ node dist/index.js ./media /opt/homebrew/bin/ffmpeg
 You can use FFmpeg to generate a test video and stream it to the RTMP server:
 
 ```bash
-ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv rtmp://localhost/live/test
+ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv rtmp://localhost/live/test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
 ```
 
 This command generates a test video with a resolution of `1280x720` and a frame rate of `30 FPS`, along with a sine wave audio track, and streams it to the RTMP server.

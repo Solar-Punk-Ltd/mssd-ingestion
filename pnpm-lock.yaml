@@ -18,8 +18,8 @@ importers:
         specifier: ^16.4.7
         version: 16.4.7
       node-media-server:
-        specifier: 2.6.6
-        version: 2.6.6
+        specifier: 2.7.4
+        version: 2.7.4
     devDependencies:
       '@commitlint/cli':
         specifier: ^19.8.0
@@ -39,6 +39,12 @@ importers:
       '@typescript-eslint/parser':
         specifier: ^6.14.0
         version: 6.21.0(eslint@8.57.1)(typescript@4.9.5)
+      commander:
+        specifier: ^13.1.0
+        version: 13.1.0
+      dayjs:
+        specifier: ^1.11.13
+        version: 1.11.13
       eslint:
         specifier: ^8.55.0
         version: 8.57.1
@@ -960,6 +966,9 @@ packages:
   dateformat@4.6.3:
     resolution: {integrity: sha512-2P0p0pFGzHS5EMnhdxQi7aJN+iMheud0UhG4dlE1DLAlvL8JHjJJTX/CSm4JXwV0Ka5nGk3zC5mcb5bUQUxxMA==}
 
+  dayjs@1.11.13:
+    resolution: {integrity: sha512-oaMBel6gjolK862uaPQOVTA7q3TZhuSvuMQAAglQDOWYO9A91IrAOUJEyKVlqJlHE0vq5p5UXxzdPfMH/x6xNg==}
+
   debug@2.6.9:
     resolution: {integrity: sha512-bC7ElrdJaJnPbAP+1EotYvqZsb3ecl5wi6Bfi6BJTUcNowp6cvspg0jXznRTKDjm/E7AdgFBVeAPVMNcKGsHMA==}
     peerDependencies:
@@ -1494,6 +1503,10 @@ packages:
   http-errors@2.0.0:
     resolution: {integrity: sha512-FtwrG/euBzaEjYeRqOgly7G0qviiXoJWnvEH2Z1plBdXgbyjv34pHTSb9zoeHMyDy33+DWy5Wt9Wo+TURtOYSQ==}
     engines: {node: '>= 0.8'}
+
+  http2-express@1.0.1:
+    resolution: {integrity: sha512-3NP5595eHFkZOBD4RXCNDrTQvuxKfcr3Q62RrHlywNc0vw/PR2HKxtF4JqFhXWVJsxb9pTf/1hZ8iLaJrWdUmQ==}
+    engines: {node: '>= 20.0.0'}
 
   human-signals@2.1.0:
     resolution: {integrity: sha512-B4FFZ6q/T2jhhksgkbEW3HBvWIfDW85snkQgawt07S7J5QXTk6BkNV+0yAeZrM5QpMAdYlocGoljn0sJ/WQkFw==}
@@ -2102,8 +2115,8 @@ packages:
   node-int64@0.4.0:
     resolution: {integrity: sha512-O5lz91xSOeoXP6DulyHfllpq+Eg00MWitZIbtPfoSEvqIHdl5gfcY6hYzDWnj0qD5tz52PI08u9qUvSVeUBeHw==}
 
-  node-media-server@2.6.6:
-    resolution: {integrity: sha512-2j1XZGRNvb2Pb/Hb8btz3yUWI2tarNArp0OCCWQklF45n8u5cSRwxT/vPJXIUUezgMdGCpryOruB+IUrsOtgyw==}
+  node-media-server@2.7.4:
+    resolution: {integrity: sha512-4nsqfukfnI6tY7d1deqBQSj3KywOiNVlPQkY0tLIjF62rzXo1SDXJXgUU+cVs5e06uO4x/55O4SiAaRH3li/Vg==}
     engines: {node: '>=8.0.0'}
     hasBin: true
 
@@ -3997,6 +4010,8 @@ snapshots:
 
   dateformat@4.6.3: {}
 
+  dayjs@1.11.13: {}
+
   debug@2.6.9:
     dependencies:
       ms: 2.0.0
@@ -4630,6 +4645,8 @@ snapshots:
       setprototypeof: 1.2.0
       statuses: 2.0.1
       toidentifier: 1.0.1
+
+  http2-express@1.0.1: {}
 
   human-signals@2.1.0: {}
 
@@ -5369,12 +5386,13 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-media-server@2.6.6:
+  node-media-server@2.7.4:
     dependencies:
       basic-auth-connect: 1.1.0
       chalk: 4.1.2
       dateformat: 4.6.3
       express: 4.21.2
+      http2-express: 1.0.1
       lodash: 4.17.21
       minimist: 1.2.8
       mkdirp: 2.1.6
