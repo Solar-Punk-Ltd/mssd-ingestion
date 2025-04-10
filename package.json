@@ -13,9 +13,13 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch --config jest.config.ts",
-    "test:coverage": "jest --coverage --config jest.config.ts"
+    "test:coverage": "jest --coverage --config jest.config.ts",
+    "generate-stream-key": "node dist/scripts/genKey.js"
   },
   "dependencies": {
+    "@ethersphere/bee-js": "^9.0.3",
+    "chokidar": "^4.0.3",
+    "dotenv": "^16.4.7",
     "node-media-server": "2.7.4"
   },
   "devDependencies": {
@@ -38,6 +42,7 @@
     "prettier": "^2.8.8",
     "rimraf": "^6.0.1",
     "ts-jest": "^29.2.6",
+    "ts-node": "^10.9.2",
     "typescript": "^4.9.5"
   }
 }

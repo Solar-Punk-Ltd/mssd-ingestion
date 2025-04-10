@@ -16,18 +16,23 @@
 12. [Notes](#notes)
 13. [Contributing](#contributing)
 
-The `RTMPServer` class provides functionality to handle Real-Time Messaging Protocol (RTMP) connections. This class manages the server-side operations required to establish and maintain RTMP connections, process incoming streams, and generate HLS (HTTP Live Streaming) files.
+The `RTMPServer` class provides functionality to handle Real-Time Messaging Protocol (RTMP) connections. This class
+manages the server-side operations required to establish and maintain RTMP connections, process incoming streams, and
+generate HLS (HTTP Live Streaming) files.
 
 ## Features
 
-- RTMP server for handling live streams.
-- Automatic generation of HLS files from RTMP streams.
-- HTTP Live Streaming (HLS) support.
-- Configurable media root and FFmpeg path.
+- RTMP Ingestion from OBS or any RTMP client.
+- HLS (.m3u8 playlist + .ts segments) generation.
+- Uploading generated HLS segments and manifests to Swarm.
+- GSOC (Single Owner Chunk) support.
+- Configurable environment for Swarm writer node, segment base URL, SOC parameters.
+- HMAC-based RTMP stream key authentication.
 
 ## Usage
 
-This project starts the `RTMPServer` and allows you to send test data to it using FFmpeg for creating HLS files.
+This project acts as a streaming ingestion server. Streams are sent to this server via OBS (RTMP), HLS segments are
+generated and uploaded to Swarm.
 
 ## Pre-requisites
 
@@ -36,6 +41,7 @@ Ensure the following are installed on your system:
 - [Node.js](https://nodejs.org/)
 - [pnpm](https://pnpm.io/)
 - [FFmpeg](https://ffmpeg.org/)
+- Swarm Node (Bee)
 
 ## Installation
 
@@ -62,53 +68,65 @@ pnpm build
 
 ## Generate HMAC Key
 
-To generate a stream key, set the `RTMP_SECRET` environment variable. This key is used to sign the stream key for security purposes.
+To generate a stream key, set the `RTMP_SECRET` environment variable. This key is used to sign the stream key for
+security purposes.
 
 ```bash
 export RTMP_SECRET=your_secret_key
+
+or set in .env
+or provide in during the command execuction
 ```
 
 Then, generate the stream key using the following command:
 
 ```bash
-node dist/cli.js -s <STREAM_NAME> -e <Expires in N minutes>
-```
-
-For example, with the default 60-minute expiration:
-
-```bash
-node dist/cli -s test5
+(RTMP_SECRET=test) npm run generate-stream-key -- -s test -e 60
 ```
 
 Output:
 
 ```bash
- OBS Stream Key:
-test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
-
- Full RTMP URL example:
-rtmp://localhost/live/test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
+[time] [LOG] - OBS Stream Key: test?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
+[time] [LOG] - Full RTMP URL example: rtmp://localhost/live/test?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
 ```
 
-The generated stream key is a combination of the stream name, an expiration time, and an HMAC signature for security. The `exp` parameter indicates the expiration time in seconds since the Unix epoch, and the `sign` parameter is the HMAC signature.
+The generated stream key is a combination of the stream name, an expiration time, and an HMAC signature for security.
+The `exp` parameter indicates the expiration time in seconds since the Unix epoch, and the `sign` parameter is the HMAC
+signature.
 
 You can add the generated stream key to the Stream Key field in OBS, for example:
 
 ```bash
-test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
+test?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
 ```
 
 ![OBS settings](./assets/obs.png)
 
 ## Start the Server
 
-Start the RTMP server by specifying the media root directory and, optionally, the FFmpeg binary path. If the FFmpeg binary path is not provided, the system's default FFmpeg will be used:
+Start the RTMP server by specifying the media root directory and, optionally, the FFmpeg binary path. If the FFmpeg
+binary path is not provided, the system's default FFmpeg will be used:
 
 ```bash
 node dist/index.js <MEDIAROOT_PATH> [<FFMPEG_PATH>]
 ```
 
-> When starting the server, please ensure that the `RTMP_SECRET` environment variable is defined.
+> When starting the server, please ensure that ENVs are set.
+
+```
+WRITER_BEE_URL - Bee Node URL for uploading to Swarm
+
+MANIFEST_SEGMENT_URL - Public URL of segments used in HLS manifest
+
+GSOC_KEY - Private key to sign GSOC uploads
+
+GSOC_TOPIC - Topic name for SOC uploads
+
+STREAM_STAMP - Stamp to upload data to Swarm
+
+RTMP_SECRET - HMAC secret for OBS stream key authentication
+```
 
 ### Example
 
@@ -124,7 +142,8 @@ You can use FFmpeg to generate a test video and stream it to the RTMP server:
 ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv rtmp://localhost/live/test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
 ```
 
-This command generates a test video with a resolution of `1280x720` and a frame rate of `30 FPS`, along with a sine wave audio track, and streams it to the RTMP server.
+This command generates a test video with a resolution of `1280x720` and a frame rate of `30 FPS`, along with a sine wave
+audio track, and streams it to the RTMP server.
 
 ## HLS File Generation
 
@@ -170,9 +189,13 @@ http://localhost:8000/live/test/index.m3u8
 
 - Ensure the `MEDIAROOT_PATH` directory is writable by the server.
 - The FFmpeg binary must be executable and accessible at the specified path.
+- The server monitors the media root's stream path for new segments. When a new segment appears, it uploads the segment
+  to Swarm, then creates a new "live" manifest containing Swarm references. Finally, it uploads this manifest as a GSOC.
+  The SOC access to this chunk allows the play of the stream via HLS.
 
 ## Contributing
 
 Contributions are welcome! Please fork the repository and submit a pull request.
 
-If you encounter any issues, feel free to open an issue on the [GitHub repository](https://github.com/Solar-Punk-Ltd/mssd-ingestion).
+If you encounter any issues, feel free to open an issue on the
+[GitHub repository](https://github.com/Solar-Punk-Ltd/mssd-ingestion).
