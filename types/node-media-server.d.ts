@@ -30,6 +30,8 @@ declare module 'node-media-server' {
     constructor(config: NodeMediaServerConfig)
     run(): void
     stop(): void
+    on(event: string, callback: (...args: any[]) => void): void
+    getSession(id: string): NodeRtmpSession
   }
 
   export = NodeMediaServer
