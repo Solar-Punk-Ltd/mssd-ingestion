@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import NodeMediaServer from 'node-media-server';
 import path from 'path';
 
-import { sleep } from '../utils/common';
+import { getEnvVariable, sleep } from '../utils/common';
 
 import { Logger } from './Logger';
 
@@ -34,6 +34,14 @@ function resolveFFmpegPath(providedPath?: string) {
 function checkFFmpegVersion(ffmpegPath: string) {
   try {
     const versionOutput = execSync(`${ffmpegPath} -version`).toString().trim();
+    // Assigning the FFmpeg version to a global variable.
+    // This is required because the `NodeTransServer` in the `node-media-server`
+    // package internally references a `version` variable in its `run` method,
+    // and there is no direct way to inject it into the package's scope.
+    // Using `(global as any)` is a workaround to make the `version` variable
+    // accessible globally.
+    // Note: Consider refactoring if the `node-media-server` package
+    // provides a better way to handle this in the future.
     (global as any).version = versionOutput;
   } catch (error) {
     logger.error('FFmpeg is not installed or not found in the specified path.');
@@ -44,7 +52,7 @@ function checkFFmpegVersion(ffmpegPath: string) {
 function authenticateStream(streamPath: string, args: Record<string, any>, session: any) {
   const { sign, exp } = args;
   const stream = streamPath.split('/')[2];
-  const secret = process.env['RTMP_SECRET'];
+  const secret = getEnvVariable('RTMP_SECRET');
 
   if (!secret || !stream || !sign || !exp) {
     logger.error(`Unauthorized stream: missing parameters`);
