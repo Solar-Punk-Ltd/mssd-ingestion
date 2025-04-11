@@ -112,7 +112,7 @@ binary path is not provided, the system's default FFmpeg will be used:
 node dist/index.js <MEDIAROOT_PATH> [<FFMPEG_PATH>]
 ```
 
-> When starting the server, please ensure that ENVs are set.
+> When starting the server, please ensure that ENVs are set. Check .env.sample for examples.
 
 ```
 WRITER_BEE_URL - Bee Node URL for uploading to Swarm
@@ -175,13 +175,24 @@ http://localhost:8000/live/test/index.m3u8
    ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv rtmp://localhost/live/test
    ```
 
-3. **Play the HLS Stream**:
+3.1 **Play the HLS Stream from local**:
 
-   Open the `.m3u8` file in VLC or any HLS-compatible player:
+Open the `.m3u8` file in VLC or any HLS-compatible player:
 
-   ```bash
-   http://localhost:8000/live/test/index.m3u8
-   ```
+```bash
+http://localhost:8000/live/test/index.m3u8
+```
+
+3.2. **Play the HLS Stream from Swarm**:
+
+Open the `.m3u8` file in VLC or any HLS-compatible player:
+
+```bash
+<your node access point>/<GSOC address of the manfiest>
+
+example:
+http://localhost:1633/soc/ebf8957d31f68f818e5529d77c0d716e9f6b6ac2/f8cbe31d56e6ce17d06ac0ecbcafac0889c78827c6997053dd9e555ad1dae864
+```
 
 ---
 
