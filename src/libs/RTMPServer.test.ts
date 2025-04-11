@@ -8,16 +8,22 @@ const errorHandlerMock = {
   handleError: jest.fn(),
 };
 
-jest.mock('../libs/Logger', () => ({
+const gentEnvMock = jest.fn();
+
+jest.mock('./Logger', () => ({
   Logger: {
     getInstance: () => loggerMock,
   },
 }));
 
-jest.mock('../libs/ErrorHandler', () => ({
+jest.mock('./ErrorHandler', () => ({
   ErrorHandler: {
     getInstance: () => errorHandlerMock,
   },
+}));
+
+jest.mock('../utils/common', () => ({
+  getEnvVariable: () => gentEnvMock,
 }));
 
 jest.mock('node-media-server');
@@ -109,6 +115,8 @@ describe('startRtmpServer', () => {
   });
 
   it('should handle prePublish event when not authorized', () => {
+    gentEnvMock.mockReturnValue('secret');
+
     const mockSession = {
       reject: jest.fn(),
     };
