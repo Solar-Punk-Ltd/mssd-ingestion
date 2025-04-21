@@ -3,27 +3,19 @@ import crypto from 'crypto';
 import NodeMediaServer from 'node-media-server';
 import path from 'path';
 
-import { getEnvVariable, sleep } from '../utils/common';
+import { getEnvVariable } from '../utils/common';
 
+import { DirectoryHandler } from './DirectoryHandler';
 import { Logger } from './Logger';
 
 const logger = Logger.getInstance();
-
-let fullStreamPath: string | null = null;
-
-export async function waitForStreamPath() {
-  while (!fullStreamPath) {
-    await sleep(5000);
-  }
-  return fullStreamPath;
-}
 
 function resolveFFmpegPath(providedPath?: string) {
   if (providedPath) return providedPath;
 
   try {
     const defaultPath = execSync('which ffmpeg').toString().trim();
-    logger.log('ffmpeg path is not provided, using default path:', defaultPath);
+    logger.info('ffmpeg path is not provided, using default path:', defaultPath);
     return defaultPath;
   } catch (error) {
     logger.error('ffmpeg not found, path is required');
@@ -88,18 +80,23 @@ export function startRtmpServer(mediaRootPath: string, providedFFmpegPath: strin
     },
   };
 
+  const dirHandler = DirectoryHandler.getInstance();
   const nms = new NodeMediaServer(config);
 
-  nms.on('prePublish', (id, streamPath, args) => authenticateStream(streamPath, args, nms.getSession(id)));
+  nms.on('prePublish', (id, streamPath, args) => {
+    logger.info('[prePublish]', id, streamPath, args);
+    authenticateStream(streamPath, args, nms.getSession(id));
+  });
 
   nms.on('postPublish', (id, streamPath) => {
-    fullStreamPath = path.join(mediaRootPath, streamPath);
-    logger.log('[postPublish]', id, streamPath);
+    logger.info('[postPublish]', id, streamPath);
+    const fullStreamPath = path.join(mediaRootPath, streamPath);
+    dirHandler.handleDir(fullStreamPath);
   });
 
   ['preConnect', 'postConnect', 'doneConnect', 'donePublish', 'prePlay', 'postPlay', 'donePlay'].forEach(event => {
     nms.on(event, (id, streamPath, args) => {
-      logger.log(`[${event}]`, id, streamPath, args);
+      logger.info(`[${event}]`, id, streamPath, args);
     });
   });
 
