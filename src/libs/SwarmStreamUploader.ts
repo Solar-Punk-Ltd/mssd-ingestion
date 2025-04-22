@@ -1,4 +1,5 @@
-import { Bee, Identifier, PrivateKey, Topic } from '@ethersphere/bee-js';
+import { Bee, Bytes, Identifier, PrivateKey, Topic } from '@ethersphere/bee-js';
+import { makeChunkedFile } from '@fairdatasociety/bmt-js';
 import fs from 'fs';
 import path from 'path';
 
@@ -51,10 +52,6 @@ export class SwarmStreamUploader {
     this.streamPath = streamPath;
   }
 
-  public enqueueNewSegment(segmentPath: string) {
-    this.segmentQueue.enqueue(() => this.upload(segmentPath));
-  }
-
   public async broadcastStart() {
     const identifier = Identifier.fromString(this.gsocRawTopic);
 
@@ -88,12 +85,12 @@ export class SwarmStreamUploader {
     return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
   }
 
-  private async upload(segmentPath: string) {
+  public upload(segmentPath: string) {
     if (segmentPath.includes('m3u8')) {
       return;
     }
 
-    const ref = await this.uploadSegment(segmentPath);
+    const ref = this.uploadSegment(segmentPath);
 
     if (!ref) {
       this.logger.error(`Failed to upload segment: ${segmentPath}`);
@@ -147,7 +144,7 @@ export class SwarmStreamUploader {
   }
 
   private buildSegmentEntry(duration: number, ref: string): string {
-    return `#EXTINF:${duration.toFixed(6)},\n${this.manifestBeeUrl}/bytes/${ref}`;
+    return `#EXTINF:${duration.toFixed(6)},\n${this.manifestBeeUrl}/${ref}`;
   }
 
   private buildManifest(): string {
@@ -195,15 +192,23 @@ export class SwarmStreamUploader {
     return totalDuration;
   }
 
-  private async uploadSegment(segmentPath: string): Promise<string | undefined> {
+  private uploadSegment(segmentPath: string) {
     try {
       const segmentData = fs.readFileSync(segmentPath);
-      const result = await this.uploadDataToBee(segmentData);
 
-      if (result) {
-        this.logger.log(`Upload result: ${segmentPath}`, result.reference.toHex());
-        return result.reference.toHex();
-      }
+      this.segmentQueue.enqueue(async () => {
+        const result = await this.uploadDataToBee(segmentData);
+        if (result) {
+          this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
+        } else {
+          this.logger.error(`Failed to upload segment: ${segmentPath}`);
+        }
+      });
+
+      const data = makeChunkedFile(segmentData);
+      const hexRef = Bytes.fromSlice(data.rootChunk().address(), 0).toHex();
+
+      return hexRef;
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadSegment');
     }

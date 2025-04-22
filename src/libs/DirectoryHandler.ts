@@ -56,6 +56,7 @@ export class DirectoryHandler {
 
     this.queue.enqueue(async () => {
       try {
+        // TODO: support rpc and owned nodes
         const bee = new Bee(`${SWARM_RPC_URL}/write`);
         const uploader = new SwarmStreamUploader(
           bee,
@@ -66,7 +67,7 @@ export class DirectoryHandler {
           STAMP,
           fullPath,
         );
-        const watcher = new MediaWatcher(fullPath, uploader.enqueueNewSegment.bind(uploader));
+        const watcher = new MediaWatcher(fullPath, uploader.upload.bind(uploader));
 
         watcher.start();
         await uploader.broadcastStart();
