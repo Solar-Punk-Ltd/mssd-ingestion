@@ -1,7 +1,6 @@
 import { execSync } from 'child_process';
 import crypto from 'crypto';
 import NodeMediaServer from 'node-media-server';
-import path from 'path';
 
 import { getEnvVariable } from '../utils/common';
 
@@ -85,16 +84,31 @@ export function startRtmpServer(mediaRootPath: string, providedFFmpegPath: strin
 
   nms.on('prePublish', (id, streamPath, args) => {
     logger.info('[prePublish]', id, streamPath, args);
-    authenticateStream(streamPath, args, nms.getSession(id));
+    const session = nms.getSession(id);
+
+    try {
+      authenticateStream(streamPath, args, session);
+      dirHandler.acquireDirectory(mediaRootPath, streamPath);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logger.error(`[prePublish] Error: ${errorMessage}`);
+      session.reject();
+    }
   });
 
   nms.on('postPublish', (id, streamPath) => {
     logger.info('[postPublish]', id, streamPath);
-    const fullStreamPath = path.join(mediaRootPath, streamPath);
-    dirHandler.handleDir(fullStreamPath);
+    dirHandler.handleStart(mediaRootPath, streamPath);
   });
 
-  ['preConnect', 'postConnect', 'doneConnect', 'donePublish', 'prePlay', 'postPlay', 'donePlay'].forEach(event => {
+  nms.on('donePublish', (id, streamPath, args) => {
+    logger.info('[donePublish]', id, streamPath, args);
+    dirHandler.handleStop(mediaRootPath, streamPath).then(() => {
+      dirHandler.releaseDirectory(mediaRootPath, streamPath);
+    });
+  });
+
+  ['preConnect', 'postConnect', 'doneConnect', 'prePlay', 'postPlay', 'donePlay'].forEach(event => {
     nms.on(event, (id, streamPath, args) => {
       logger.info(`[${event}]`, id, streamPath, args);
     });
