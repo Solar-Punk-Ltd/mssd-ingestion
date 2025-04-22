@@ -10,15 +10,14 @@ import { Logger } from './Logger';
 import { Queue } from './Queue';
 
 // TODO: Refactor idea, separate the upload logic from the manifest handling logic
+// TODO: omit segmentBuffer, use the manifest file directly
 export class SwarmStreamUploader {
   private swarmManifestName = 'playlist.m3u8';
   private origiManifestName = 'index.m3u8';
-  private MAX_SEGMENTS = 20;
   private TARGET_DURATION = 6;
-  private mediaSequence = 0;
+  private mediaSequence = 0; // this isn't utalized yet, but it should be set to the first segment number
 
-  private segmentQueue = new Queue();
-  private manifestQueue = new Queue();
+  private uploadQueue = new Queue();
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
   private segmentBuffer: string[] = [];
@@ -43,7 +42,7 @@ export class SwarmStreamUploader {
     streamPath: string,
   ) {
     this.bee = bee;
-    this.manifestBeeUrl = `${swarmRpc}/bytes`;
+    this.manifestBeeUrl = `${swarmRpc}/read/bytes`;
     this.streamSigner = new PrivateKey(streamKey);
     this.streamRawTopic = crypto.randomUUID();
     this.gsocSigner = new PrivateKey(gsocResId);
@@ -64,12 +63,12 @@ export class SwarmStreamUploader {
   }
 
   public async broadcastStop() {
-    await this.segmentQueue.waitForProcessing();
+    await this.uploadQueue.waitForProcessing();
 
     this.closeManifest();
 
     const nextIndex = this.index++;
-    this.uploadManifest(this.streamPath, nextIndex);
+    this.uploadManifest(nextIndex);
 
     const duration = this.getTotalDurationFromFile();
 
@@ -98,7 +97,11 @@ export class SwarmStreamUploader {
     }
 
     this.upsertManifest(segmentPath, ref);
-    this.uploadManifest(segmentPath);
+
+    const filename = path.basename(segmentPath);
+    const fileIndex = parseInt(filename.match(/\d+/)?.[0] || '', 10);
+    this.uploadManifest(fileIndex);
+
     this.rmProcessedSegment(segmentPath);
   }
 
@@ -131,11 +134,6 @@ export class SwarmStreamUploader {
 
     const segmentLine = this.buildSegmentEntry(extInf, ref);
     this.segmentBuffer.push(segmentLine);
-
-    if (this.segmentBuffer.length > this.MAX_SEGMENTS) {
-      this.segmentBuffer.shift();
-      this.mediaSequence++;
-    }
 
     const manifest = this.buildManifest();
     fs.writeFileSync(swarmManifestPath, manifest);
@@ -196,7 +194,7 @@ export class SwarmStreamUploader {
     try {
       const segmentData = fs.readFileSync(segmentPath);
 
-      this.segmentQueue.enqueue(async () => {
+      this.uploadQueue.enqueue(async () => {
         const result = await this.uploadDataToBee(segmentData);
         if (result) {
           this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
@@ -214,17 +212,15 @@ export class SwarmStreamUploader {
     }
   }
 
-  private uploadManifest(segmentPath: string, index?: number) {
+  private uploadManifest(index = 0) {
     try {
-      const filename = path.basename(segmentPath);
-      const fileIndex = parseInt(filename.match(/\d+/)?.[0] || '', 10);
-      this.index = fileIndex || index || 0;
+      this.index = index;
 
       const fullPath = path.join(this.streamPath, this.swarmManifestName);
       const manifestData = fs.readFileSync(fullPath);
 
-      this.manifestQueue.enqueue(async () => {
-        const result = await this.uploadDataAsSoc(this.index, manifestData);
+      this.uploadQueue.enqueue(async () => {
+        const result = await this.uploadDataAsSoc(index, manifestData);
         if (result) {
           this.logger.log(`Manifest upload result: ${fullPath}`, result.reference.toHex());
         } else {
