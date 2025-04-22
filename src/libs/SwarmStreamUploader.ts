@@ -1,4 +1,5 @@
-import { Bee, Identifier, PrivateKey } from '@ethersphere/bee-js';
+import { Bee, Bytes, Identifier, PrivateKey, Topic } from '@ethersphere/bee-js';
+import { makeChunkedFile } from '@fairdatasociety/bmt-js';
 import fs from 'fs';
 import path from 'path';
 
@@ -8,44 +9,87 @@ import { ErrorHandler } from './ErrorHandler';
 import { Logger } from './Logger';
 import { Queue } from './Queue';
 
+// TODO: Refactor idea, separate the upload logic from the manifest handling logic
+// TODO: omit segmentBuffer, use the manifest file directly
 export class SwarmStreamUploader {
   private swarmManifestName = 'playlist.m3u8';
   private origiManifestName = 'index.m3u8';
-  private MAX_SEGMENTS = 20;
   private TARGET_DURATION = 6;
-  private mediaSequence = 0;
+  private mediaSequence = 0; // this isn't utalized yet, but it should be set to the first segment number
 
-  private queue = new Queue();
+  private uploadQueue = new Queue();
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
   private segmentBuffer: string[] = [];
 
   private bee: Bee;
   private manifestBeeUrl: string;
+  private streamSigner: PrivateKey;
+  private streamRawTopic: string;
   private gsocSigner: PrivateKey;
-  private gsocTopic: string;
-  private stamp: string;
+  private gsocRawTopic: string;
   private streamPath: string;
+  private stamp: string;
+  private index: number = 0;
 
-  constructor(bee: Bee, manifestBeeUrl: string, gsocKey: string, gsocTopic: string, stamp: string, streamPath: string) {
+  constructor(
+    bee: Bee,
+    swarmRpc: string,
+    gsocResId: string,
+    gsocTopic: string,
+    streamKey: string,
+    stamp: string,
+    streamPath: string,
+  ) {
     this.bee = bee;
-    this.gsocSigner = new PrivateKey(gsocKey);
-    this.manifestBeeUrl = manifestBeeUrl;
-    this.gsocTopic = gsocTopic;
+    this.manifestBeeUrl = `${swarmRpc}/read/bytes`;
+    this.streamSigner = new PrivateKey(streamKey);
+    this.streamRawTopic = crypto.randomUUID();
+    this.gsocSigner = new PrivateKey(gsocResId);
+    this.gsocRawTopic = gsocTopic;
     this.stamp = stamp;
     this.streamPath = streamPath;
   }
 
-  public enqueueNewSegment(segmentPath: string) {
-    this.queue.enqueue(() => this.upload(segmentPath));
+  public async broadcastStart() {
+    const identifier = Identifier.fromString(this.gsocRawTopic);
+
+    const data = {
+      owner: this.streamSigner.publicKey().address().toHex(),
+      topic: this.streamRawTopic,
+      state: 'live',
+    };
+    return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
   }
 
-  private async upload(segmentPath: string) {
+  public async broadcastStop() {
+    await this.uploadQueue.waitForProcessing();
+
+    this.closeManifest();
+
+    const nextIndex = this.index++;
+    this.uploadManifest(nextIndex);
+
+    const duration = this.getTotalDurationFromFile();
+
+    const identifier = Identifier.fromString(this.gsocRawTopic);
+
+    const data = {
+      owner: this.streamSigner.publicKey().address().toHex(),
+      topic: this.streamRawTopic,
+      state: 'VOD',
+      index: nextIndex,
+      duration,
+    };
+    return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
+  }
+
+  public upload(segmentPath: string) {
     if (segmentPath.includes('m3u8')) {
       return;
     }
 
-    const ref = await this.uploadSegment(segmentPath);
+    const ref = this.uploadSegment(segmentPath);
 
     if (!ref) {
       this.logger.error(`Failed to upload segment: ${segmentPath}`);
@@ -53,7 +97,10 @@ export class SwarmStreamUploader {
     }
 
     this.upsertManifest(segmentPath, ref);
-    await this.uploadManifest();
+
+    const filename = path.basename(segmentPath);
+    const fileIndex = parseInt(filename.match(/\d+/)?.[0] || '', 10);
+    this.uploadManifest(fileIndex);
 
     this.rmProcessedSegment(segmentPath);
   }
@@ -65,6 +112,13 @@ export class SwarmStreamUploader {
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.deleteProcessedSegment');
     }
+  }
+
+  private closeManifest() {
+    const swarmManifestPath = path.join(this.streamPath, this.swarmManifestName);
+    const close = `#EXT-X-ENDLIST\n`;
+    fs.appendFileSync(swarmManifestPath, close);
+    this.logger.log(`Manifest closed: ${swarmManifestPath}`);
   }
 
   private upsertManifest(segmentPath: string, ref: string) {
@@ -81,11 +135,6 @@ export class SwarmStreamUploader {
     const segmentLine = this.buildSegmentEntry(extInf, ref);
     this.segmentBuffer.push(segmentLine);
 
-    if (this.segmentBuffer.length > this.MAX_SEGMENTS) {
-      this.segmentBuffer.shift();
-      this.mediaSequence++;
-    }
-
     const manifest = this.buildManifest();
     fs.writeFileSync(swarmManifestPath, manifest);
 
@@ -93,15 +142,13 @@ export class SwarmStreamUploader {
   }
 
   private buildSegmentEntry(duration: number, ref: string): string {
-    return `#EXTINF:${duration.toFixed(6)},\n${this.manifestBeeUrl}/bytes/${ref}`;
+    return `#EXTINF:${duration.toFixed(6)},\n${this.manifestBeeUrl}/${ref}`;
   }
 
   private buildManifest(): string {
     const header = [
       '#EXTM3U',
       '#EXT-X-VERSION:3',
-      '#EXT-X-PLAYLIST-TYPE:EVENT',
-      '#EXT-X-ALLOW-CACHE:NO',
       `#EXT-X-TARGETDURATION:${this.TARGET_DURATION}`,
       `#EXT-X-MEDIA-SEQUENCE:${this.mediaSequence}`,
     ];
@@ -128,39 +175,67 @@ export class SwarmStreamUploader {
     return null;
   }
 
-  private async uploadSegment(segmentPath: string): Promise<string | undefined> {
+  private getTotalDurationFromFile() {
+    const swarmManifestPath = path.join(this.streamPath, this.swarmManifestName);
+    const manifest = fs.readFileSync(swarmManifestPath, 'utf-8');
+
+    const totalDuration = manifest
+      .split('\n')
+      .filter(line => line.startsWith('#EXTINF'))
+      .reduce((sum, line) => {
+        const duration = parseFloat(line.split(':')[1]);
+        return sum + (isNaN(duration) ? 0 : duration);
+      }, 0);
+
+    return totalDuration;
+  }
+
+  private uploadSegment(segmentPath: string) {
     try {
       const segmentData = fs.readFileSync(segmentPath);
-      const result = await this.uploadDataToBee(segmentData);
 
-      if (result) {
-        this.logger.log(`Upload result: ${segmentPath}`, result.reference.toHex());
-        return result.reference.toHex();
-      }
+      this.uploadQueue.enqueue(async () => {
+        const result = await this.uploadDataToBee(segmentData);
+        if (result) {
+          this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
+        } else {
+          this.logger.error(`Failed to upload segment: ${segmentPath}`);
+        }
+      });
+
+      const data = makeChunkedFile(segmentData);
+      const hexRef = Bytes.fromSlice(data.rootChunk().address(), 0).toHex();
+
+      return hexRef;
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadSegment');
     }
   }
 
-  private async uploadManifest() {
+  private uploadManifest(index = 0) {
     try {
+      this.index = index;
+
       const fullPath = path.join(this.streamPath, this.swarmManifestName);
       const manifestData = fs.readFileSync(fullPath);
 
-      const result = await this.uploadDataAsSoc(manifestData);
-      if (result) {
-        this.logger.log('GSOC manifest upload:', result.reference.toHex());
-      }
+      this.uploadQueue.enqueue(async () => {
+        const result = await this.uploadDataAsSoc(index, manifestData);
+        if (result) {
+          this.logger.log(`Manifest upload result: ${fullPath}`, result.reference.toHex());
+        } else {
+          this.logger.error(`Failed to upload manifest: ${fullPath}`);
+        }
+      });
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadManifest');
     }
   }
 
-  // Limitation, it has to be GSOC as overwritten SOCs are not distributed properly
-  private async uploadDataAsSoc(data: Uint8Array) {
+  private async uploadDataAsSoc(index: number, data: Uint8Array) {
     try {
-      const identifier = Identifier.fromString(this.gsocTopic);
-      return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, data));
+      const { uploadPayload } = this.bee.makeFeedWriter(Topic.fromString(this.streamRawTopic), this.streamSigner);
+      return uploadPayload(this.stamp, data, { index });
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadDataAsSoc');
       return null;

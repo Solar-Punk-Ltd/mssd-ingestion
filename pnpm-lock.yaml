@@ -11,6 +11,9 @@ importers:
       '@ethersphere/bee-js':
         specifier: ^9.0.3
         version: 9.1.0
+      '@fairdatasociety/bmt-js':
+        specifier: ^2.1.0
+        version: 2.1.0
       chokidar:
         specifier: ^4.0.3
         version: 4.0.3
@@ -346,6 +349,9 @@ packages:
   '@ethersphere/bee-js@9.1.0':
     resolution: {integrity: sha512-hMWScFHU5ZH4wZc6cGZsBRxxiW1uwBxhNzW5nJ/vdzwQx9/sL1zEuCBkBPrbnlfnj7/ubnDZHj93s5n0qZ64PA==}
     engines: {bee: 2.4.0-390a402e, beeApiVersion: 7.2.0}
+
+  '@fairdatasociety/bmt-js@2.1.0':
+    resolution: {integrity: sha512-Qm8jCQMijS1rwQIiDRJ4C7CdLXrUl0UVZet/McZ2fhNOk5J+Lhc0vqdF9i+7ZGwhGmTwILhNzcbNFJW1ejBhWw==}
 
   '@humanwhocodes/config-array@0.13.0':
     resolution: {integrity: sha512-DZLEEqFWQFiyK6h5YIeynKx7JlvCYWL0cImfSRXZ9l4Sg2efkFGTuFf6vzXjK1cq6IYkU+Eg/JizXw+TD2vRNw==}
@@ -3191,6 +3197,8 @@ snapshots:
       - bufferutil
       - debug
       - utf-8-validate
+
+  '@fairdatasociety/bmt-js@2.1.0': {}
 
   '@humanwhocodes/config-array@0.13.0':
     dependencies:

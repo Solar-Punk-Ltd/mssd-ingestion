@@ -1,112 +1,152 @@
-jest.mock('fs');
-jest.mock('../utils/common', () => ({
-  retryAwaitableAsync: jest.fn(),
-}));
-jest.mock('./Logger', () => ({
-  Logger: { getInstance: () => ({ log: jest.fn(), error: jest.fn() }) },
-}));
-jest.mock('./ErrorHandler', () => ({
-  ErrorHandler: { getInstance: () => ({ handleError: jest.fn() }) },
-}));
-jest.mock('./Queue', () => {
-  return {
-    Queue: jest.fn().mockImplementation(() => ({
-      enqueue: jest.fn(),
-    })),
-  };
-});
-
 import fs from 'fs';
 
 import { SwarmStreamUploader } from './SwarmStreamUploader';
 
+jest.mock('fs');
+
+jest.mock('@ethersphere/bee-js', () => ({
+  Bee: jest.fn(() => mockBee),
+  PrivateKey: jest.fn().mockImplementation(() => ({
+    publicKey: () => ({
+      address: () => ({
+        toHex: () => '0xOwnerAddress',
+      }),
+    }),
+  })),
+  Identifier: {
+    fromString: jest.fn(() => 'mockIdentifier'),
+  },
+  Topic: {
+    fromString: jest.fn(() => 'mockTopic'),
+  },
+  Bytes: {
+    fromSlice: () => ({
+      toHex: () => 'hexRef',
+    }),
+  },
+}));
+
+jest.mock('@fairdatasociety/bmt-js', () => ({
+  makeChunkedFile: jest.fn(() => ({
+    rootChunk: () => ({
+      address: () => new Uint8Array([0xaa]),
+    }),
+  })),
+}));
+
+jest.mock('../utils/common', () => ({
+  retryAwaitableAsync: jest.fn(fn => fn()),
+}));
+
+jest.mock('./Logger', () => ({
+  Logger: {
+    getInstance: () => ({
+      log: jest.fn(),
+      error: jest.fn(),
+    }),
+  },
+}));
+
+jest.mock('./ErrorHandler', () => ({
+  ErrorHandler: {
+    getInstance: () => ({
+      handleError: jest.fn(),
+    }),
+  },
+}));
+
+jest.mock('./Queue', () => ({
+  Queue: jest.fn().mockImplementation(() => ({
+    enqueue: jest.fn(fn => fn()),
+    waitForProcessing: jest.fn(() => Promise.resolve()),
+  })),
+}));
+
+const mockBee = {
+  uploadData: jest.fn().mockResolvedValue({ reference: { toHex: () => 'mockRef' } }),
+  gsocSend: jest.fn().mockResolvedValue({ reference: { toHex: () => 'gsocRef' } }),
+  makeFeedWriter: jest.fn().mockReturnValue({
+    uploadPayload: jest.fn().mockResolvedValue({ reference: { toHex: () => 'socRef' } }),
+  }),
+};
+
 describe('SwarmStreamUploader', () => {
-  const mockParams = {
-    manifestBeeUrl: 'http://my.bee.node',
-    gsocKey: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-    gsocTopic: 'topic-1',
-    stamp: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-    streamPath: '/mock/stream',
-  };
+  const streamPath = '/mock/stream';
 
-  const mockBee = {
-    uploadData: jest.fn().mockResolvedValue({ reference: { toHex: () => 'mockRef' } }),
-    gsocSend: jest.fn().mockResolvedValue({ reference: { toHex: () => 'gsocRef' } }),
-  };
-
-  const createUploader = () =>
-    new SwarmStreamUploader(
-      mockBee as any,
-      mockParams.manifestBeeUrl,
-      mockParams.gsocKey,
-      mockParams.gsocTopic,
-      mockParams.stamp,
-      mockParams.streamPath,
-    );
+  const uploader = new SwarmStreamUploader(
+    mockBee as any,
+    'http://mocked-url',
+    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    'topic-1',
+    '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    streamPath,
+  );
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (fs.readFileSync as jest.Mock).mockReset();
-    (fs.writeFileSync as jest.Mock).mockReset();
-    (fs.rmSync as jest.Mock).mockReset();
   });
 
-  it('should enqueue a segment upload', () => {
-    const uploader = createUploader();
-    uploader['queue'].enqueue = jest.fn();
-
-    uploader.enqueueNewSegment('/mock/stream/seg.ts');
-    expect(uploader['queue'].enqueue).toHaveBeenCalledWith(expect.any(Function));
+  it('broadcastStart calls bee.gsocSend with correct payload', async () => {
+    const result = await uploader.broadcastStart();
+    expect(mockBee.gsocSend).toHaveBeenCalled();
+    expect(result.reference.toHex()).toBe('gsocRef');
   });
 
-  it('should skip uploading .m3u8 files', async () => {
-    const uploader = createUploader();
+  it('broadcastStop finalizes manifest and sends final message', async () => {
+    jest.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:6.000000,\nsegment.ts\n');
+    jest.spyOn(fs, 'appendFileSync').mockImplementation(() => {});
+    jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+    const result = await uploader.broadcastStop();
+
+    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.stringContaining('playlist.m3u8'), '#EXT-X-ENDLIST\n');
+    expect(mockBee.gsocSend).toHaveBeenCalledWith(
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      expect.anything(),
+      'mockIdentifier',
+      expect.stringContaining('"state":"VOD"'),
+    );
+    expect(result.reference.toHex()).toBe('gsocRef');
+  });
+
+  it('upload skips m3u8 files', async () => {
     const spy = jest.spyOn(uploader as any, 'uploadSegment');
-    await (uploader as any).upload('/mock/stream/index.m3u8');
-
+    uploader.upload('index.m3u8');
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('should call uploadSegment and update manifest', async () => {
-    const uploader = createUploader();
+  it('upload calls uploadSegment and writes manifest', async () => {
+    jest.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:5.5,\nseg0.ts');
+    jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+    jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
+    uploader.upload('seg0.ts');
 
-    jest.spyOn(uploader as any, 'uploadSegment').mockResolvedValue('mockRef');
-    jest.spyOn(uploader as any, 'getExtInfFromFile').mockReturnValue(5.2);
-    jest.spyOn(uploader as any, 'uploadManifest').mockResolvedValue(undefined);
-    jest.spyOn(uploader as any, 'rmProcessedSegment').mockImplementation(() => {});
-
-    await (uploader as any).upload('/mock/stream/seg.ts');
-
+    expect(mockBee.uploadData).toHaveBeenCalled();
     expect(fs.writeFileSync).toHaveBeenCalledWith(
       expect.stringContaining('playlist.m3u8'),
-      expect.stringContaining('#EXT-X-MEDIA-SEQUENCE:0'),
+      expect.stringContaining('#EXTINF:'),
     );
   });
 
-  it('should increase media sequence and shift buffer', async () => {
-    const uploader = createUploader();
+  it('uploadSegment logs failure if fs.readFileSync throws', async () => {
+    jest.spyOn(fs, 'readFileSync').mockImplementation(() => {
+      throw new Error('oops');
+    });
+    const errHandler = (uploader as any).errorHandler;
+    await (uploader as any).uploadSegment('seg-fail.ts');
 
-    jest.spyOn(uploader as any, 'uploadSegment').mockResolvedValue('mockRef');
-    jest.spyOn(uploader as any, 'getExtInfFromFile').mockReturnValue(6.0);
-    jest.spyOn(uploader as any, 'uploadManifest').mockResolvedValue(undefined);
-    jest.spyOn(uploader as any, 'rmProcessedSegment').mockImplementation(() => {});
-
-    for (let i = 0; i < 22; i++) {
-      await (uploader as any).upload(`/mock/stream/seg${i}.ts`);
-    }
-
-    expect(uploader['segmentBuffer'].length).toBeLessThanOrEqual(20);
-    expect(uploader['mediaSequence']).toBe(2); // 2 segments trimmed off
+    expect(errHandler.handleError).toHaveBeenCalled();
   });
 
-  it('should log error if uploadSegment fails', async () => {
-    const uploader = createUploader();
+  it('uploadManifest pushes manifest to Bee feed writer', async () => {
+    jest.spyOn(fs, 'readFileSync').mockReturnValue(Buffer.from('playlist content'));
+    await (uploader as any).uploadManifest(1);
+    expect(mockBee.makeFeedWriter).toHaveBeenCalled();
+  });
 
-    jest.spyOn(uploader as any, 'uploadSegment').mockResolvedValue(undefined);
-    const loggerError = jest.spyOn((uploader as any).logger, 'error');
-
-    await (uploader as any).upload('/mock/stream/seg.ts');
-
-    expect(loggerError).toHaveBeenCalledWith(expect.stringMatching(/Failed to upload segment/));
+  it('getTotalDurationFromFile parses all EXTINF durations', () => {
+    jest.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:3.1,\n#EXTINF:4.9,\n');
+    const total = (uploader as any).getTotalDurationFromFile();
+    expect(total).toBeCloseTo(8.0);
   });
 });
