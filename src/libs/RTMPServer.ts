@@ -1,6 +1,7 @@
 import { execSync } from 'child_process';
 import crypto from 'crypto';
 import NodeMediaServer from 'node-media-server';
+import path from 'path';
 
 import { getEnvVariable } from '../utils/common';
 
@@ -60,11 +61,13 @@ function authenticateStream(streamPath: string, args: Record<string, any>, sessi
   }
 }
 
-export function startRtmpServer(mediaRootPath: string, providedFFmpegPath: string): void {
-  if (!mediaRootPath) {
+export function startRtmpServer(mRootPath: string, providedFFmpegPath: string): void {
+  if (!mRootPath) {
     logger.error('Media root path is required.');
     return;
   }
+
+  const mediaRootPath = path.resolve(__dirname, '..', 'media');
 
   const ffmpegPath = resolveFFmpegPath(providedFFmpegPath);
   checkFFmpegVersion(ffmpegPath);
