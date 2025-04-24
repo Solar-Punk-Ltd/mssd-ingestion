@@ -75,7 +75,19 @@ export function startRtmpServer(mediaRootPath: string, providedFFmpegPath: strin
     http: { port: 8000, allow_origin: '*', mediaroot: mediaRootPath },
     trans: {
       ffmpeg: ffmpegPath,
-      tasks: [{ app: 'live', hls: true, hlsKeep: true, hlsFlags: '[hls_time=5:hls_list_size=20]' }],
+      tasks: [
+        { app: 'live', hls: true, hlsKeep: true, hlsFlags: '[hls_time=5:hls_list_size=20]' },
+        {
+          app: 'audio',
+          hls: true,
+          hlsKeep: true,
+          hlsFlags: '[hls_time=5:hls_list_size=20]',
+          ac: 'aac',
+          ab: '128k',
+          mp4: false,
+          vc: 'none',
+        },
+      ],
     },
   };
 

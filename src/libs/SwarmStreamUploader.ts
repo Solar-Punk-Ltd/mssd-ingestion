@@ -1,5 +1,6 @@
 import { Bee, Bytes, Identifier, PrivateKey, Topic } from '@ethersphere/bee-js';
 import { makeChunkedFile } from '@fairdatasociety/bmt-js';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 

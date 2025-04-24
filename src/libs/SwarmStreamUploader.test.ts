@@ -1,5 +1,8 @@
 import fs from 'fs';
 
+jest.mock('crypto', () => ({
+  randomUUID: jest.fn(() => 'mocked-uuid'),
+}));
 import { SwarmStreamUploader } from './SwarmStreamUploader';
 
 jest.mock('fs');

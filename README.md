@@ -145,6 +145,12 @@ ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=
 This command generates a test video with a resolution of `1280x720` and a frame rate of `30 FPS`, along with a sine wave
 audio track, and streams it to the RTMP server.
 
+You can use FFmpeg to send audio only (capturing the microphone) to the audio endpoint:
+
+```bash
+ffmpeg -f avfoundation -i ":0" -ac 1 -c:a aac -b:a 128k -f flv "rtmp://localhost:1935/audio/test?exp=1749088934&sign=05f06de6b69481d6d493a7d1f1fdbc44d3346f14f4c26140a70e425898b0af75"
+```
+
 ## HLS File Generation
 
 The `RTMPServer` will generate HLS files (e.g., `.m3u8` playlist and `.ts` segments) in the specified `MEDIAROOT_PATH`.
