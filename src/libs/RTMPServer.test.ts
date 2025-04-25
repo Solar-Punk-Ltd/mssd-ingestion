@@ -112,6 +112,7 @@ describe('startRtmpServer', () => {
             ab: '128k',
             mp4: false,
             vc: 'none',
+            vcParam: ['-vn'],
           },
         ],
       },

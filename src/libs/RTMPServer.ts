@@ -86,6 +86,7 @@ export function startRtmpServer(mediaRootPath: string, providedFFmpegPath: strin
           ab: '128k',
           mp4: false,
           vc: 'none',
+          vcParam: ['-vn'],
         },
       ],
     },
