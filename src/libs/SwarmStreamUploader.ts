@@ -1,35 +1,34 @@
 import { Bee, Bytes, Identifier, PrivateKey, Topic } from '@ethersphere/bee-js';
 import { makeChunkedFile } from '@fairdatasociety/bmt-js';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
 import { retryAwaitableAsync } from '../utils/common';
 
 import { ErrorHandler } from './ErrorHandler';
+import { HlsManifestManager } from './HlsManifestManager';
 import { Logger } from './Logger';
 import { Queue } from './Queue';
 
-// TODO: Refactor idea, separate the upload logic from the manifest handling logic
-// TODO: omit segmentBuffer, use the manifest file directly
 export class SwarmStreamUploader {
   private swarmManifestName = 'playlist.m3u8';
   private origiManifestName = 'index.m3u8';
-  private TARGET_DURATION = 6;
-  private mediaSequence = 0; // this isn't utalized yet, but it should be set to the first segment number
 
   private uploadQueue = new Queue();
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
-  private segmentBuffer: string[] = [];
 
   private bee: Bee;
-  private manifestBeeUrl: string;
+  private stamp: string;
   private streamSigner: PrivateKey;
   private streamRawTopic: string;
   private gsocSigner: PrivateKey;
-  private gsocRawTopic: string;
+  private gsocIdentifier: Identifier;
+  private manifestBeeUrl: string;
   private streamPath: string;
-  private stamp: string;
+
+  private manifestManager: HlsManifestManager;
   private index: number = 0;
 
   constructor(
@@ -42,212 +41,166 @@ export class SwarmStreamUploader {
     streamPath: string,
   ) {
     this.bee = bee;
+    this.stamp = stamp;
+    this.streamPath = streamPath;
     this.manifestBeeUrl = `${swarmRpc}/read/bytes`;
+
     this.streamSigner = new PrivateKey(streamKey);
     this.streamRawTopic = crypto.randomUUID();
     this.gsocSigner = new PrivateKey(gsocResId);
-    this.gsocRawTopic = gsocTopic;
-    this.stamp = stamp;
-    this.streamPath = streamPath;
+    this.gsocIdentifier = Identifier.fromString(gsocTopic);
+
+    const originalManifestPath = path.join(streamPath, this.origiManifestName);
+    const swarmManifestPath = path.join(streamPath, this.swarmManifestName);
+    this.manifestManager = new HlsManifestManager({
+      originalManifestPath,
+      swarmManifestPath,
+      manifestBeeUrl: this.manifestBeeUrl,
+    });
+
+    if (fs.existsSync(originalManifestPath)) {
+      this.manifestManager.loadOriginalManifest();
+    }
   }
 
-  public async broadcastStart() {
-    const identifier = Identifier.fromString(this.gsocRawTopic);
-
-    const data = {
+  /** Start broadcast: send 'live' message and return its result */
+  public async broadcastStart(): Promise<any> {
+    const payload = {
       owner: this.streamSigner.publicKey().address().toHex(),
       topic: this.streamRawTopic,
       state: 'live',
     };
-    return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
+    const result = await retryAwaitableAsync(() =>
+      this.bee.gsocSend(this.stamp, this.gsocSigner, this.gsocIdentifier, JSON.stringify(payload)),
+    );
+    this.logger.log('Broadcast start sent to GSOC feed', payload);
+    return result;
   }
 
-  public async broadcastStop() {
+  /** Stop broadcast: append ENDLIST, finalize playlist, send 'VOD' message and return its result */
+  public async broadcastStop(): Promise<any> {
     await this.uploadQueue.waitForProcessing();
 
-    this.closeManifest();
+    // Append the #EXT-X-ENDLIST tag
+    const swarmManifestPath = path.join(this.streamPath, this.swarmManifestName);
+    fs.appendFileSync(swarmManifestPath, '#EXT-X-ENDLIST\n');
 
-    const nextIndex = this.index++;
-    this.uploadManifest(nextIndex);
+    this.manifestManager.closePlaylist();
+    this.manifestManager.saveManifest();
 
+    // Upload final manifest snapshot
+    const finalIndex = this.index++;
+    await this.uploadManifest(finalIndex);
+
+    // Compute total duration for VOD metadata
     const duration = this.getTotalDurationFromFile();
 
-    const identifier = Identifier.fromString(this.gsocRawTopic);
-
-    const data = {
+    const payload = {
       owner: this.streamSigner.publicKey().address().toHex(),
       topic: this.streamRawTopic,
       state: 'VOD',
-      index: nextIndex,
+      index: finalIndex,
       duration,
     };
-    return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
+    const result = await retryAwaitableAsync(() =>
+      this.bee.gsocSend(this.stamp, this.gsocSigner, this.gsocIdentifier, JSON.stringify(payload)),
+    );
+    this.logger.log('Broadcast stop sent to GSOC feed', payload);
+    return result;
   }
 
-  public upload(segmentPath: string) {
-    if (segmentPath.includes('m3u8')) {
-      return;
-    }
+  /** Called when chokidar detects a new segment file */
+  public upload(segmentPath: string): void {
+    if (segmentPath.endsWith('.m3u8')) return;
 
     const ref = this.uploadSegment(segmentPath);
+    if (!ref) return;
 
-    if (!ref) {
-      this.logger.error(`Failed to upload segment: ${segmentPath}`);
-      return;
-    }
+    // Update and write the swarm manifest
+    const duration = this.manifestManager.getSegmentDurationFromOriginal(segmentPath);
+    this.manifestManager.addSegment(ref, duration);
+    this.manifestManager.saveManifest();
 
-    this.upsertManifest(segmentPath, ref);
+    // Push the updated manifest to Swarm feed
+    const fileIndex = parseInt(path.basename(segmentPath).match(/\d+/)?.[0] || '0', 10);
+    this.uploadQueue.enqueue(() => this.uploadManifest(fileIndex));
 
-    const filename = path.basename(segmentPath);
-    const fileIndex = parseInt(filename.match(/\d+/)?.[0] || '', 10);
-    this.uploadManifest(fileIndex);
-
+    // Clean up the local segment file
     this.rmProcessedSegment(segmentPath);
   }
 
-  private rmProcessedSegment(segmentPath: string) {
-    try {
-      fs.rmSync(segmentPath);
-      this.logger.log(`Deleted processed segment: ${segmentPath}`);
-    } catch (error) {
-      this.errorHandler.handleError(error, 'SwarmStreamUploader.deleteProcessedSegment');
-    }
-  }
-
-  private closeManifest() {
-    const swarmManifestPath = path.join(this.streamPath, this.swarmManifestName);
-    const close = `#EXT-X-ENDLIST\n`;
-    fs.appendFileSync(swarmManifestPath, close);
-    this.logger.log(`Manifest closed: ${swarmManifestPath}`);
-  }
-
-  private upsertManifest(segmentPath: string, ref: string) {
-    const filename = path.basename(segmentPath);
-    const origiManifestPath = path.join(this.streamPath, this.origiManifestName);
-    const swarmManifestPath = path.join(this.streamPath, this.swarmManifestName);
-
-    const extInf = this.getExtInfFromFile(origiManifestPath, filename);
-    if (!extInf) {
-      this.logger.error(`Failed to get EXTINF for ${filename}`);
-      return;
-    }
-
-    const segmentLine = this.buildSegmentEntry(extInf, ref);
-    this.segmentBuffer.push(segmentLine);
-
-    const manifest = this.buildManifest();
-    fs.writeFileSync(swarmManifestPath, manifest);
-
-    this.logger.log(`Manifest updated (seq=${this.mediaSequence}): ${filename}`);
-  }
-
-  private buildSegmentEntry(duration: number, ref: string): string {
-    return `#EXTINF:${duration.toFixed(6)},\n${this.manifestBeeUrl}/${ref}`;
-  }
-
-  private buildManifest(): string {
-    const header = [
-      '#EXTM3U',
-      '#EXT-X-VERSION:3',
-      `#EXT-X-TARGETDURATION:${this.TARGET_DURATION}`,
-      `#EXT-X-MEDIA-SEQUENCE:${this.mediaSequence}`,
-    ];
-
-    return `${header.join('\n')}\n${this.segmentBuffer.join('\n')}\n`;
-  }
-
-  private getExtInfFromFile(path: string, segmentName: string): number | null {
-    const manifest = fs.readFileSync(path, 'utf-8');
-    const lines = manifest.trim().split('\n');
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-
-      if (line === segmentName && i > 0) {
-        const prevLine = lines[i - 1].trim();
-        const match = prevLine.match(/^#EXTINF:([\d.]+),?/);
-        if (match) {
-          return parseFloat(match[1]);
-        }
-      }
-    }
-
-    return null;
-  }
-
-  private getTotalDurationFromFile() {
-    const swarmManifestPath = path.join(this.streamPath, this.swarmManifestName);
-    const manifest = fs.readFileSync(swarmManifestPath, 'utf-8');
-
-    const totalDuration = manifest
-      .split('\n')
-      .filter(line => line.startsWith('#EXTINF'))
-      .reduce((sum, line) => {
-        const duration = parseFloat(line.split(':')[1]);
-        return sum + (isNaN(duration) ? 0 : duration);
-      }, 0);
-
-    return totalDuration;
-  }
-
-  private uploadSegment(segmentPath: string) {
+  /** Encapsulates reading + enqueuing the segment upload, returns the Swarm ref */
+  private uploadSegment(segmentPath: string): string | undefined {
     try {
       const segmentData = fs.readFileSync(segmentPath);
-
       this.uploadQueue.enqueue(async () => {
-        const result = await this.uploadDataToBee(segmentData);
-        if (result) {
-          this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
+        const res = await this.uploadDataToBee(segmentData);
+        if (res) {
+          this.logger.log(`Segment uploaded: ${path.basename(segmentPath)} → ${res.reference.toHex()}`);
         } else {
-          this.logger.error(`Failed to upload segment: ${segmentPath}`);
+          this.logger.error(`Segment upload failed: ${segmentPath}`);
         }
       });
-
-      const data = makeChunkedFile(segmentData);
-      const hexRef = Bytes.fromSlice(data.rootChunk().address(), 0).toHex();
-
-      return hexRef;
-    } catch (error) {
-      this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadSegment');
+      const chunked = makeChunkedFile(segmentData);
+      return Bytes.fromSlice(chunked.rootChunk().address(), 0).toHex();
+    } catch (err) {
+      this.errorHandler.handleError(err, 'SwarmStreamUploader.uploadSegment');
+      return undefined;
     }
   }
 
-  private uploadManifest(index = 0) {
-    try {
-      this.index = index;
-
-      const fullPath = path.join(this.streamPath, this.swarmManifestName);
-      const manifestData = fs.readFileSync(fullPath);
-
-      this.uploadQueue.enqueue(async () => {
-        const result = await this.uploadDataAsSoc(index, manifestData);
-        if (result) {
-          this.logger.log(`Manifest upload result: ${fullPath}`, result.reference.toHex());
-        } else {
-          this.logger.error(`Failed to upload manifest: ${fullPath}`);
-        }
-      });
-    } catch (error) {
-      this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadManifest');
-    }
+  /** Total up all the EXTINF lines in the current swarm playlist file */
+  private getTotalDurationFromFile(): number {
+    const swarmManifestPath = path.join(this.streamPath, this.swarmManifestName);
+    const content = fs.readFileSync(swarmManifestPath, 'utf-8');
+    return content
+      .split('\n')
+      .filter(line => line.startsWith('#EXTINF'))
+      .reduce((sum, line) => sum + parseFloat(line.split(':')[1]), 0);
   }
 
+  /** Enqueue pushing the current manifest snapshot to the Swarm feed */
+  private async uploadManifest(index: number): Promise<void> {
+    this.index = index;
+    const content = Buffer.from(this.manifestManager.getManifestContent(), 'utf-8');
+    this.uploadQueue.enqueue(async () => {
+      const res = await this.uploadDataAsSoc(index, content);
+      if (res) {
+        this.logger.log(`Manifest uploaded (index=${index}) → ${res.reference.toHex()}`);
+      } else {
+        this.logger.error(`Manifest upload failed at index ${index}`);
+      }
+    });
+  }
+
+  /** Send bytes as a SOC feed payload */
   private async uploadDataAsSoc(index: number, data: Uint8Array) {
     try {
       const { uploadPayload } = this.bee.makeFeedWriter(Topic.fromString(this.streamRawTopic), this.streamSigner);
-      return uploadPayload(this.stamp, data, { index });
-    } catch (error) {
-      this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadDataAsSoc');
+      return await uploadPayload(this.stamp, data, { index });
+    } catch (err) {
+      this.errorHandler.handleError(err, 'SwarmStreamUploader.uploadDataAsSoc');
       return null;
     }
   }
 
+  /** Send raw data to Swarm */
   private async uploadDataToBee(data: Uint8Array) {
     try {
-      return retryAwaitableAsync(() => this.bee.uploadData(this.stamp, data));
-    } catch (error) {
-      this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadDataToBee');
+      return await retryAwaitableAsync(() => this.bee.uploadData(this.stamp, data));
+    } catch (err) {
+      this.errorHandler.handleError(err, 'SwarmStreamUploader.uploadDataToBee');
       return null;
+    }
+  }
+
+  /** Remove the TS file once it’s been enqueued */
+  private rmProcessedSegment(segmentPath: string): void {
+    try {
+      fs.rmSync(segmentPath, { force: true });
+      this.logger.log(`Deleted local segment: ${segmentPath}`);
+    } catch (err) {
+      this.errorHandler.handleError(err, 'SwarmStreamUploader.rmProcessedSegment');
     }
   }
 }
