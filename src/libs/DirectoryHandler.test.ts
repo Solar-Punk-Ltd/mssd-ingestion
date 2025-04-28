@@ -66,6 +66,7 @@ describe('DirectoryHandler', () => {
     '/audio/test?exp=1745855645&sign=2db33d7b239b628d08b51d2be7951c373dff7a223a4687e0fef5d82d9f191138';
   const videoStreamPath =
     '/video/test?exp=1745855645&sign=2db33d7b239b628d08b51d2be7951c373dff7a223a4687e0fef5d82d9f191138';
+  const invalidStreamPath = '/invalid/test';
   const audioFullPath = path.join(basePath, audioStreamPath);
   const videoFullPath = path.join(basePath, videoStreamPath);
   let handler: DirectoryHandler;
@@ -121,6 +122,12 @@ describe('DirectoryHandler', () => {
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       videoFullPath,
       'video', // Ensure mediatype is 'video'
+    );
+  });
+
+  it('should throw an error for invalid streamPath', () => {
+    expect(() => handler.handleStart(basePath, invalidStreamPath)).toThrow(
+      `Invalid streamPath: ${invalidStreamPath}. Must start with '/audio' or '/video'.`,
     );
   });
 

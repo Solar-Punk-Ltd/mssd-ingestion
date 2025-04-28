@@ -52,6 +52,9 @@ export class DirectoryHandler {
 
   public handleStart(mediaRootPath: string, streamPath: string): void {
     const fullPath = path.join(mediaRootPath, streamPath);
+    if (!streamPath.startsWith('/audio') && !streamPath.startsWith('/video')) {
+      throw new Error(`Invalid streamPath: ${streamPath}. Must start with '/audio' or '/video'.`);
+    }
     const mediatype = streamPath.startsWith('/audio') ? 'audio' : 'video';
     this.logger.info(`Handling directory: ${fullPath} with mediatype: ${mediatype}`);
 
