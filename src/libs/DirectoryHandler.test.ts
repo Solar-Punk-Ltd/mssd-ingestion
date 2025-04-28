@@ -37,6 +37,7 @@ jest.mock('../utils/common', () => ({
 
 const startMock = jest.fn();
 const closeMock = jest.fn();
+const swarmStreamUploaderMock = jest.fn();
 
 jest.mock('./MediaWatcher', () => ({
   MediaWatcher: jest.fn().mockImplementation((p, cb) => ({
@@ -49,17 +50,24 @@ jest.mock('./MediaWatcher', () => ({
 }));
 
 jest.mock('./SwarmStreamUploader', () => ({
-  SwarmStreamUploader: jest.fn().mockImplementation(() => ({
-    upload: jest.fn(),
-    broadcastStart: jest.fn().mockResolvedValue(undefined),
-    broadcastStop: jest.fn().mockResolvedValue(undefined),
-  })),
+  SwarmStreamUploader: jest.fn().mockImplementation((bee, rpcUrl, resId, topic, key, stamp, path, mediatype) => {
+    swarmStreamUploaderMock(bee, rpcUrl, resId, topic, key, stamp, path, mediatype);
+    return {
+      upload: jest.fn(),
+      broadcastStart: jest.fn().mockResolvedValue(undefined),
+      broadcastStop: jest.fn().mockResolvedValue(undefined),
+    };
+  }),
 }));
 
 describe('DirectoryHandler', () => {
   const basePath = '/mock';
-  const streamPath = 'stream';
-  const fullPath = path.join(basePath, streamPath);
+  const audioStreamPath =
+    '/audio/test?exp=1745855645&sign=2db33d7b239b628d08b51d2be7951c373dff7a223a4687e0fef5d82d9f191138';
+  const videoStreamPath =
+    '/live/test?exp=1745855645&sign=2db33d7b239b628d08b51d2be7951c373dff7a223a4687e0fef5d82d9f191138';
+  const audioFullPath = path.join(basePath, audioStreamPath);
+  const videoFullPath = path.join(basePath, videoStreamPath);
   let handler: DirectoryHandler;
 
   beforeEach(() => {
@@ -68,33 +76,61 @@ describe('DirectoryHandler', () => {
   });
 
   it('should acquire directory successfully', () => {
-    handler.acquireDirectory(basePath, streamPath);
-    expect(() => handler.acquireDirectory(basePath, streamPath)).toThrow(`Directory ${fullPath} is already in use.`);
+    handler.acquireDirectory(basePath, audioStreamPath);
+    expect(() => handler.acquireDirectory(basePath, audioStreamPath)).toThrow(
+      `Directory ${audioFullPath} is already in use.`,
+    );
   });
 
   it('should release directory successfully', () => {
-    // Prev run (it's static)
-    handler.releaseDirectory(basePath, streamPath);
+    handler.releaseDirectory(basePath, audioStreamPath);
 
-    handler.acquireDirectory(basePath, streamPath);
-    handler.releaseDirectory(basePath, streamPath);
-    expect(() => handler.acquireDirectory(basePath, streamPath)).not.toThrow();
+    handler.acquireDirectory(basePath, audioStreamPath);
+    handler.releaseDirectory(basePath, audioStreamPath);
+    expect(() => handler.acquireDirectory(basePath, audioStreamPath)).not.toThrow();
   });
 
-  it('should start handling stream directory and store uploader and watcher', async () => {
-    handler.handleStart(basePath, streamPath);
+  it('should start handling audio stream directory and pass mediatype as audio', async () => {
+    handler.handleStart(basePath, audioStreamPath);
     await new Promise(resolve => setTimeout(resolve, 200));
 
     expect(startMock).toHaveBeenCalled();
+    expect(swarmStreamUploaderMock).toHaveBeenCalledWith(
+      expect.any(Object), // Bee instance
+      'http://mocked-url',
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      'mock-topic',
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      audioFullPath,
+      'audio', // Ensure mediatype is 'audio'
+    );
+  });
+
+  it('should start handling video stream directory and pass mediatype as video', async () => {
+    handler.handleStart(basePath, videoStreamPath);
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    expect(startMock).toHaveBeenCalled();
+    expect(swarmStreamUploaderMock).toHaveBeenCalledWith(
+      expect.any(Object), // Bee instance
+      'http://mocked-url',
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      'mock-topic',
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      videoFullPath,
+      'video', // Ensure mediatype is 'video'
+    );
   });
 
   it('should stop handling directory and clean up properly', async () => {
-    handler.handleStart(basePath, streamPath);
+    handler.handleStart(basePath, audioStreamPath);
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    await handler.handleStop(basePath, streamPath);
+    await handler.handleStop(basePath, audioStreamPath);
 
     expect(closeMock).toHaveBeenCalled();
-    expect(fs.rmSync).toHaveBeenCalledWith(fullPath, { recursive: true, force: true });
+    expect(fs.rmSync).toHaveBeenCalledWith(audioFullPath, { recursive: true, force: true });
   });
 });

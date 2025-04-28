@@ -52,7 +52,8 @@ export class DirectoryHandler {
 
   public handleStart(mediaRootPath: string, streamPath: string): void {
     const fullPath = path.join(mediaRootPath, streamPath);
-    this.logger.info(`Handling directory: ${fullPath}`);
+    const mediatype = streamPath.startsWith('/audio') ? 'audio' : 'video';
+    this.logger.info(`Handling directory: ${fullPath} with mediatype: ${mediatype}`);
 
     this.queue.enqueue(async () => {
       try {
@@ -66,6 +67,7 @@ export class DirectoryHandler {
           STREAM_KEY,
           STAMP,
           fullPath,
+          mediatype,
         );
         const watcher = new MediaWatcher(fullPath, uploader.upload.bind(uploader));
 

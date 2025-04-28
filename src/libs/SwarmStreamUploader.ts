@@ -32,6 +32,7 @@ export class SwarmStreamUploader {
   private streamPath: string;
   private stamp: string;
   private index: number = 0;
+  private mediatype: string;
 
   constructor(
     bee: Bee,
@@ -41,6 +42,7 @@ export class SwarmStreamUploader {
     streamKey: string,
     stamp: string,
     streamPath: string,
+    mediatype: string,
   ) {
     this.bee = bee;
     this.manifestBeeUrl = `${swarmRpc}/read/bytes`;
@@ -50,6 +52,7 @@ export class SwarmStreamUploader {
     this.gsocRawTopic = gsocTopic;
     this.stamp = stamp;
     this.streamPath = streamPath;
+    this.mediatype = mediatype;
   }
 
   public async broadcastStart() {
@@ -59,6 +62,7 @@ export class SwarmStreamUploader {
       owner: this.streamSigner.publicKey().address().toHex(),
       topic: this.streamRawTopic,
       state: 'live',
+      mediatype: this.mediatype,
     };
     return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
   }
@@ -81,6 +85,7 @@ export class SwarmStreamUploader {
       state: 'VOD',
       index: nextIndex,
       duration,
+      mediatype: this.mediatype,
     };
     return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
   }
