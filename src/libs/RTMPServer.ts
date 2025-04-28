@@ -42,6 +42,10 @@ function checkFFmpegVersion(ffmpegPath: string) {
 
 function authenticateStream(streamPath: string, args: Record<string, any>, session: any) {
   const { sign, exp } = args;
+  if (!streamPath.startsWith('/video/') && !streamPath.startsWith('/audio/')) {
+    const errorMessage = `The stream must be either video or audio: ${streamPath}`;
+    throw new Error(errorMessage);
+  }
   const stream = streamPath.split('/')[2];
   const secret = getEnvVariable('RTMP_SECRET');
 

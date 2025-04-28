@@ -120,7 +120,7 @@ describe('startRtmpServer', () => {
     expect(mockRun).toHaveBeenCalled();
   });
 
-  it('should handle prePublish event when not authorized', () => {
+  it('should handle prePublish event when streamPath is invalid', () => {
     gentEnvMock.mockReturnValue('secret');
 
     const mockSession = {
@@ -136,10 +136,12 @@ describe('startRtmpServer', () => {
     expect(prePublishCallback).toBeDefined();
 
     if (prePublishCallback) {
-      prePublishCallback('123', '/video/stream', { key: 'value' });
+      const invalidStreamPath = '/invalid/stream';
+      prePublishCallback('123', invalidStreamPath, { exp: '12345', sign: 'valid-signature' });
 
-      expect(loggerMock.error).toHaveBeenCalledWith('Unauthorized stream: missing parameters');
-      expect(mockGetSession).toHaveBeenCalledWith('123');
+      expect(loggerMock.error).toHaveBeenCalledWith(
+        `[prePublish] Error: The stream must be either video or audio: ${invalidStreamPath}`,
+      );
       expect(mockSession.reject).toHaveBeenCalled();
     }
   });

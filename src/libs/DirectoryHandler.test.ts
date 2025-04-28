@@ -125,12 +125,6 @@ describe('DirectoryHandler', () => {
     );
   });
 
-  it('should throw an error for invalid streamPath', () => {
-    expect(() => handler.handleStart(basePath, invalidStreamPath)).toThrow(
-      `Invalid streamPath: ${invalidStreamPath}. Must start with '/audio' or '/video'.`,
-    );
-  });
-
   it('should stop handling directory and clean up properly', async () => {
     handler.handleStart(basePath, audioStreamPath);
     await new Promise(resolve => setTimeout(resolve, 200));
