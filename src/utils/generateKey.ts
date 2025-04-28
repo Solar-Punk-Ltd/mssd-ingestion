@@ -44,5 +44,5 @@ export function runCLI(): void {
   const streamKey = generateStreamKey(stream, secret, expiresInMinutes);
 
   logger.log('OBS Stream Key:', streamKey);
-  logger.log('Full RTMP URL example:', `rtmp://localhost/live/${streamKey}`);
+  logger.log('Full RTMP URL example:', `rtmp://localhost/video/${streamKey}`);
 }

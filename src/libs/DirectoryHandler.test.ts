@@ -65,7 +65,7 @@ describe('DirectoryHandler', () => {
   const audioStreamPath =
     '/audio/test?exp=1745855645&sign=2db33d7b239b628d08b51d2be7951c373dff7a223a4687e0fef5d82d9f191138';
   const videoStreamPath =
-    '/live/test?exp=1745855645&sign=2db33d7b239b628d08b51d2be7951c373dff7a223a4687e0fef5d82d9f191138';
+    '/video/test?exp=1745855645&sign=2db33d7b239b628d08b51d2be7951c373dff7a223a4687e0fef5d82d9f191138';
   const audioFullPath = path.join(basePath, audioStreamPath);
   const videoFullPath = path.join(basePath, videoStreamPath);
   let handler: DirectoryHandler;

@@ -102,7 +102,7 @@ describe('startRtmpServer', () => {
       trans: {
         ffmpeg: '/path/to/ffmpeg',
         tasks: [
-          { app: 'live', hls: true, hlsKeep: true, hlsFlags: '[hls_time=5:hls_list_size=20]' },
+          { app: 'video', hls: true, hlsKeep: true, hlsFlags: '[hls_time=5:hls_list_size=20]' },
           {
             app: 'audio',
             hls: true,
@@ -136,7 +136,7 @@ describe('startRtmpServer', () => {
     expect(prePublishCallback).toBeDefined();
 
     if (prePublishCallback) {
-      prePublishCallback('123', '/live/stream', { key: 'value' });
+      prePublishCallback('123', '/video/stream', { key: 'value' });
 
       expect(loggerMock.error).toHaveBeenCalledWith('Unauthorized stream: missing parameters');
       expect(mockGetSession).toHaveBeenCalledWith('123');

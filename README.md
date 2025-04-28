@@ -88,7 +88,7 @@ Output:
 
 ```bash
 [time] [LOG] - OBS Stream Key: test?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
-[time] [LOG] - Full RTMP URL example: rtmp://localhost/live/test?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
+[time] [LOG] - Full RTMP URL example: rtmp://localhost/video/test?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
 ```
 
 The generated stream key is a combination of the stream name, an expiration time, and an HMAC signature for security.
@@ -139,7 +139,7 @@ node dist/index.js ./media /opt/homebrew/bin/ffmpeg
 You can use FFmpeg to generate a test video and stream it to the RTMP server:
 
 ```bash
-ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv rtmp://localhost/live/test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
+ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv rtmp://localhost/video/test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
 ```
 
 This command generates a test video with a resolution of `1280x720` and a frame rate of `30 FPS`, along with a sine wave
@@ -164,7 +164,7 @@ To test the generated HLS files:
 3. Point VLC to the `.m3u8` file in the `MEDIAROOT_PATH` directory or use the HTTP URL if the server is running:
 
 ```bash
-http://localhost:8000/live/test/index.m3u8
+http://localhost:8000/video/test/index.m3u8
 ```
 
 ## Example Workflow
@@ -178,7 +178,7 @@ http://localhost:8000/live/test/index.m3u8
 2. **Send Test Stream**:
 
    ```bash
-   ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv rtmp://localhost/live/test
+   ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv rtmp://localhost/video/test
    ```
 
 3.1 **Play the HLS Stream from local**:
@@ -186,7 +186,7 @@ http://localhost:8000/live/test/index.m3u8
 Open the `.m3u8` file in VLC or any HLS-compatible player:
 
 ```bash
-http://localhost:8000/live/test/index.m3u8
+http://localhost:8000/video/test/index.m3u8
 ```
 
 3.2. **Play the HLS Stream from Swarm**:

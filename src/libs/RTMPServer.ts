@@ -76,7 +76,7 @@ export function startRtmpServer(mediaRootPath: string, providedFFmpegPath: strin
     trans: {
       ffmpeg: ffmpegPath,
       tasks: [
-        { app: 'live', hls: true, hlsKeep: true, hlsFlags: '[hls_time=5:hls_list_size=20]' },
+        { app: 'video', hls: true, hlsKeep: true, hlsFlags: '[hls_time=5:hls_list_size=20]' },
         {
           app: 'audio',
           hls: true,
