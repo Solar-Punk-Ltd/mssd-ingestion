@@ -14,6 +14,11 @@ module.exports = {
         STAMP: process.env.STAMP,
         RTMP_SECRET: process.env.RTMP_SECRET,
       },
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '32GB',
+      time: true,
     },
   ],
 };
