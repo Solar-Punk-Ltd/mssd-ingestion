@@ -1,3 +1,5 @@
+import path from 'path';
+
 const loggerMock = {
   error: jest.fn(),
   info: jest.fn(),
@@ -85,6 +87,8 @@ describe('startRtmpServer', () => {
     startRtmpServer('/path/to/media', '/path/to/ffmpeg');
 
     expect(execSync).toHaveBeenCalledWith('/path/to/ffmpeg -version');
+
+    const expectedMediaRoot = path.resolve(__dirname, '../media');
     expect(NodeMediaServer).toHaveBeenCalledWith({
       logType: 3,
       rtmp: {
@@ -97,7 +101,7 @@ describe('startRtmpServer', () => {
       http: {
         port: 8000,
         allow_origin: '*',
-        mediaroot: '/path/to/media',
+        mediaroot: expectedMediaRoot,
       },
       trans: {
         ffmpeg: '/path/to/ffmpeg',
