@@ -69,4 +69,4 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             cd ~/mssd-ingestion
-            pm2 start dist/index.js --name ingestion --interpreter node
+            pm2_path=$(which pm2) && $pm2_path start dist/index.js --name ingestion --interpreter node
