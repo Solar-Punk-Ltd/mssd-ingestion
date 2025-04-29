@@ -58,7 +58,7 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: 'dist,node_modules,.env'
+          source: 'dist,node_modules,.env,ecosystem.config.js'
           target: '~/mssd-ingestion'
 
       - name: Start app with PM2
@@ -69,4 +69,5 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             cd ~/mssd-ingestion
-            pm2_path=$(which pm2) && $pm2_path start dist/index.js --name ingestion --interpreter node
+            pm2_path=$(which pm2)
+            $pm2_path start ecosystem.config.js
