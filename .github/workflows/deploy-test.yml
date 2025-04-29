@@ -1,4 +1,4 @@
-name: Build and Deploy Test to VPS (PM2)
+name: Build and Deploy Test ENV to VPS (PM2)
 
 on:
   push:
@@ -34,6 +34,7 @@ jobs:
 
       - name: Generate .env file
         run: |
+          echo "APP_HOME=${{ secrets.APP_HOME }}" > .env
           echo "SWARM_RPC_URL=${{ secrets.SWARM_RPC_URL }}" >> .env
           echo "GSOC_RESOURCE_ID=${{ secrets.GSOC_RESOURCE_ID }}" >> .env
           echo "GSOC_TOPIC=${{ secrets.GSOC_TOPIC }}" >> .env
@@ -49,7 +50,9 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            pm2_path=$(which pm2) && pm2 delete ingestion || true
+            export APP_HOME=${{ secrets.APP_HOME }}
+            export PATH="$APP_HOME/.nvm/versions/node/v22.9.0/bin:$PATH"
+            pm2 delete ingestion || true
             rm -rf ~/mssd-ingestion
 
       - name: Upload fresh project files
@@ -68,5 +71,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
+            export APP_HOME=${{ secrets.APP_HOME }}
+            export PATH="$APP_HOME/.nvm/versions/node/v22.9.0/bin:$PATH"
             cd ~/mssd-ingestion
-            pm2_path=$(which pm2) && $pm2_path start ecosystem.config.js
+            pm2 start ecosystem.config.js

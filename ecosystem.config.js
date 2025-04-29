@@ -4,7 +4,7 @@ module.exports = {
       name: 'ingestion',
       script: 'dist/index.js',
       interpreter: 'node',
-      cwd: '/home/solarpunk/mssd-ingestion',
+      cwd: `${process.env.APP_HOME}/mssd-ingestion`,
       env: {
         NODE_ENV: 'production',
         SWARM_RPC_URL: process.env.SWARM_RPC_URL,
