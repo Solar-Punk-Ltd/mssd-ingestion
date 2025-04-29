@@ -34,7 +34,6 @@ jobs:
 
       - name: Generate .env file
         run: |
-          echo "APP_HOME=${{ secrets.APP_HOME }}" > .env
           echo "SWARM_RPC_URL=${{ secrets.SWARM_RPC_URL }}" >> .env
           echo "GSOC_RESOURCE_ID=${{ secrets.GSOC_RESOURCE_ID }}" >> .env
           echo "GSOC_TOPIC=${{ secrets.GSOC_TOPIC }}" >> .env
