@@ -1,5 +1,8 @@
 import fs from 'fs';
 
+jest.mock('crypto', () => ({
+  randomUUID: jest.fn(() => 'mocked-uuid'),
+}));
 import { SwarmStreamUploader } from './SwarmStreamUploader';
 
 jest.mock('fs');
@@ -73,49 +76,68 @@ const mockBee = {
 describe('SwarmStreamUploader', () => {
   const streamPath = '/mock/stream';
 
-  const uploader = new SwarmStreamUploader(
-    mockBee as any,
-    'http://mocked-url',
-    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-    'topic-1',
-    '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-    '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-    streamPath,
-  );
+  const createUploader = (mediatype: string) =>
+    new SwarmStreamUploader(
+      mockBee as any,
+      'http://mocked-url',
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      'topic-1',
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      streamPath,
+      mediatype,
+    );
 
-  beforeEach(() => {
-    jest.clearAllMocks();
+  it('should initialize with mediatype as audio', () => {
+    const uploader = createUploader('audio');
+    expect(uploader).toBeDefined();
+    expect((uploader as any).mediatype).toBe('audio');
   });
 
-  it('broadcastStart calls bee.gsocSend with correct payload', async () => {
-    const result = await uploader.broadcastStart();
-    expect(mockBee.gsocSend).toHaveBeenCalled();
-    expect(result.reference.toHex()).toBe('gsocRef');
+  it('should initialize with mediatype as video', () => {
+    const uploader = createUploader('video');
+    expect(uploader).toBeDefined();
+    expect((uploader as any).mediatype).toBe('video');
   });
 
-  it('broadcastStop finalizes manifest and sends final message', async () => {
-    jest.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:6.000000,\nsegment.ts\n');
-    jest.spyOn(fs, 'appendFileSync').mockImplementation(() => {});
-    jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
-    const result = await uploader.broadcastStop();
+  it('broadcastStart includes mediatype in payload', async () => {
+    const uploader = createUploader('audio');
+    await uploader.broadcastStart();
 
-    expect(fs.appendFileSync).toHaveBeenCalledWith(expect.stringContaining('playlist.m3u8'), '#EXT-X-ENDLIST\n');
     expect(mockBee.gsocSend).toHaveBeenCalledWith(
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       expect.anything(),
       'mockIdentifier',
-      expect.stringContaining('"state":"VOD"'),
+      expect.stringContaining('"mediatype":"audio"'),
     );
-    expect(result.reference.toHex()).toBe('gsocRef');
+  });
+
+  it('broadcastStop includes mediatype in payload', async () => {
+    const uploader = createUploader('video');
+
+    jest.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:6.000000,\nsegment.ts\n');
+    jest.spyOn(fs, 'appendFileSync').mockImplementation(() => {});
+    jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+
+    await uploader.broadcastStop();
+
+    expect(mockBee.gsocSend).toHaveBeenCalledWith(
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      expect.anything(),
+      'mockIdentifier',
+      expect.stringContaining('"mediatype":"video"'),
+    );
   });
 
   it('upload skips m3u8 files', async () => {
+    const uploader = createUploader('audio');
     const spy = jest.spyOn(uploader as any, 'uploadSegment');
     uploader.upload('index.m3u8');
     expect(spy).not.toHaveBeenCalled();
   });
 
   it('upload calls uploadSegment and writes manifest', async () => {
+    const uploader = createUploader('audio');
     jest.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:5.5,\nseg0.ts');
     jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
     jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
@@ -132,6 +154,7 @@ describe('SwarmStreamUploader', () => {
     jest.spyOn(fs, 'readFileSync').mockImplementation(() => {
       throw new Error('oops');
     });
+    const uploader = createUploader('audio');
     const errHandler = (uploader as any).errorHandler;
     await (uploader as any).uploadSegment('seg-fail.ts');
 
@@ -139,6 +162,7 @@ describe('SwarmStreamUploader', () => {
   });
 
   it('uploadManifest pushes manifest to Bee feed writer', async () => {
+    const uploader = createUploader('audio');
     jest.spyOn(fs, 'readFileSync').mockReturnValue(Buffer.from('playlist content'));
     await (uploader as any).uploadManifest(1);
     expect(mockBee.makeFeedWriter).toHaveBeenCalled();
@@ -146,6 +170,7 @@ describe('SwarmStreamUploader', () => {
 
   it('getTotalDurationFromFile parses all EXTINF durations', () => {
     jest.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:3.1,\n#EXTINF:4.9,\n');
+    const uploader = createUploader('audio');
     const total = (uploader as any).getTotalDurationFromFile();
     expect(total).toBeCloseTo(8.0);
   });

@@ -102,11 +102,17 @@ describe('startRtmpServer', () => {
       trans: {
         ffmpeg: '/path/to/ffmpeg',
         tasks: [
+          { app: 'video', hls: true, hlsKeep: true, hlsFlags: '[hls_time=5:hls_list_size=20]' },
           {
-            app: 'live',
+            app: 'audio',
             hls: true,
             hlsKeep: true,
             hlsFlags: '[hls_time=5:hls_list_size=20]',
+            ac: 'aac',
+            ab: '128k',
+            mp4: false,
+            vc: 'none',
+            vcParam: ['-vn'],
           },
         ],
       },
@@ -114,7 +120,7 @@ describe('startRtmpServer', () => {
     expect(mockRun).toHaveBeenCalled();
   });
 
-  it('should handle prePublish event when not authorized', () => {
+  it('should handle prePublish event when streamPath is invalid', () => {
     gentEnvMock.mockReturnValue('secret');
 
     const mockSession = {
@@ -130,10 +136,12 @@ describe('startRtmpServer', () => {
     expect(prePublishCallback).toBeDefined();
 
     if (prePublishCallback) {
-      prePublishCallback('123', '/live/stream', { key: 'value' });
+      const invalidStreamPath = '/invalid/stream';
+      prePublishCallback('123', invalidStreamPath, { exp: '12345', sign: 'valid-signature' });
 
-      expect(loggerMock.error).toHaveBeenCalledWith('Unauthorized stream: missing parameters');
-      expect(mockGetSession).toHaveBeenCalledWith('123');
+      expect(loggerMock.error).toHaveBeenCalledWith(
+        `[prePublish] Error: The stream must be either video or audio: ${invalidStreamPath}`,
+      );
       expect(mockSession.reject).toHaveBeenCalled();
     }
   });
