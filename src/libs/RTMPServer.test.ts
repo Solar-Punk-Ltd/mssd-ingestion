@@ -106,12 +106,17 @@ describe('startRtmpServer', () => {
       trans: {
         ffmpeg: '/path/to/ffmpeg',
         tasks: [
-          { app: 'video', hls: true, hlsKeep: true, hlsFlags: '[hls_time=5:hls_list_size=20]' },
+          {
+            app: 'video',
+            hls: true,
+            hlsKeep: true,
+            hlsFlags: '[hls_time=5:hls_list_size=10:hls_flags=delete_segments]',
+          },
           {
             app: 'audio',
             hls: true,
             hlsKeep: true,
-            hlsFlags: '[hls_time=5:hls_list_size=20]',
+            hlsFlags: '[hls_time=5:hls_list_size=10:hls_flags=delete_segments]',
             ac: 'aac',
             ab: '128k',
             mp4: false,
