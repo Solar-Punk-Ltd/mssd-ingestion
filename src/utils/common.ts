@@ -1,5 +1,5 @@
-import { ErrorHandler } from '../libs/ErrorHandler';
-import { Logger } from '../libs/Logger';
+import { ErrorHandler } from '../libs/ErrorHandler.js';
+import { Logger } from '../libs/Logger.js';
 
 const logger = Logger.getInstance();
 const errorHandler = ErrorHandler.getInstance();

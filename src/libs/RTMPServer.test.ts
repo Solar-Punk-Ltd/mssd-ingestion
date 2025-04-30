@@ -36,7 +36,7 @@ jest.mock('child_process', () => ({
 import { execSync } from 'child_process';
 import NodeMediaServer from 'node-media-server';
 
-import { startRtmpServer } from '../libs/RTMPServer';
+import { startRtmpServer } from '../libs/RTMPServer.js';
 
 describe('startRtmpServer', () => {
   const mockRun = jest.fn();

@@ -1,7 +1,8 @@
 {
   "name": "mssd-ingestion",
   "version": "0.1.0",
-  "type": "commonjs",
+  "type": "module",
+  "node": ">=18",
   "repository": {
     "type": "git",
     "url": "https://github.com/Solar-Punk-Ltd/mssd-ingestion.git"
@@ -22,7 +23,8 @@
     "@fairdatasociety/bmt-js": "^2.1.0",
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
-    "node-media-server": "2.7.4"
+    "node-media-server": "2.7.4",
+    "p-queue": "^8.1.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.0",
@@ -35,6 +37,7 @@
     "dayjs": "^1.11.13",
     "eslint": "^8.55.0",
     "eslint-config-prettier": "^8.10.0",
+    "eslint-import-resolver-typescript": "^4.3.4",
     "eslint-plugin-import": "^2.29.1",
     "eslint-plugin-prettier": "^4.2.1",
     "eslint-plugin-simple-import-sort": "^10.0.0",

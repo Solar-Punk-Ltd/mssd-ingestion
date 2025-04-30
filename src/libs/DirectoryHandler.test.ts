@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { DirectoryHandler } from './DirectoryHandler';
+import { DirectoryHandler } from './DirectoryHandler.js';
 
 jest.mock('fs', () => ({
   rmSync: jest.fn(),

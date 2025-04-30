@@ -1,14 +1,15 @@
 import { Bee, Bytes, Identifier, PrivateKey, Topic } from '@ethersphere/bee-js';
-import { makeChunkedFile } from '@fairdatasociety/bmt-js';
 import crypto from 'crypto';
 import fs from 'fs';
+import PQueue from 'p-queue';
 import path from 'path';
+import pkg from '@fairdatasociety/bmt-js';
+const { makeChunkedFile } = pkg;
 
-import { retryAwaitableAsync } from '../utils/common';
+import { retryAwaitableAsync } from '../utils/common.js';
 
-import { ErrorHandler } from './ErrorHandler';
-import { Logger } from './Logger';
-import { Queue } from './Queue';
+import { ErrorHandler } from './ErrorHandler.js';
+import { Logger } from './Logger.js';
 
 // TODO: Refactor idea, separate the upload logic from the manifest handling logic
 export class SwarmStreamUploader {
@@ -18,8 +19,8 @@ export class SwarmStreamUploader {
   private readonly segmentBufferSize = 10;
   private mediaSequence = 0;
 
-  private segmentQueue = new Queue();
-  private manifestQueue = new Queue();
+  private segmentQueue = new PQueue({ concurrency: 1 });
+  private manifestQueue = new PQueue({ concurrency: 1 });
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
   private segmentBuffer: string[] = [];
@@ -70,7 +71,7 @@ export class SwarmStreamUploader {
   }
 
   public async broadcastStop() {
-    const validVODManifest = this.checkFinalVODManifest();
+    const validVODManifest = this.isFinalVODManifestValid();
     if (!validVODManifest) {
       return;
     }
@@ -80,8 +81,8 @@ export class SwarmStreamUploader {
     const finalIndex = this.index++;
     this.uploadManifest(this.vodSwarmManifestName, finalIndex);
 
-    await this.segmentQueue.waitForProcessing();
-    await this.manifestQueue.waitForProcessing();
+    await this.segmentQueue.onIdle();
+    await this.manifestQueue.onIdle();
 
     const identifier = Identifier.fromString(this.gsocRawTopic);
     const data = {
@@ -118,7 +119,7 @@ export class SwarmStreamUploader {
     const filename = path.basename(segmentPath);
     const fileIndex = parseInt(filename.match(/\d+/)?.[0] || '', 10);
 
-    this.segmentQueue.enqueue(async () => {
+    this.segmentQueue.add(async () => {
       const result = await this.uploadDataToBee(segmentData);
       if (result) {
         const hexRef = result.reference.toHex();
@@ -140,7 +141,7 @@ export class SwarmStreamUploader {
       const fullPath = path.join(this.streamPath, manifestName);
       const manifestData = fs.readFileSync(fullPath);
 
-      this.manifestQueue.enqueue(async () => {
+      this.manifestQueue.add(async () => {
         const result = await this.uploadDataAsSoc(index, manifestData);
         if (result) {
           this.logger.log(`Manifest upload result: ${fullPath}`, result.reference.toHex());
@@ -186,7 +187,7 @@ export class SwarmStreamUploader {
 
     const swarmVodManifestPath = path.join(this.streamPath, this.vodSwarmManifestName);
     if (!fs.existsSync(swarmVodManifestPath)) {
-      const vodManifestHeaders = [...this.hlsOriginalHeaders, '#EXT-X-PLAYLIST-TYPE: VOD', '#EXT-X-MEDIA-SEQUENCE: 0'];
+      const vodManifestHeaders = [...this.hlsOriginalHeaders, '#EXT-X-PLAYLIST-TYPE:VOD', '#EXT-X-MEDIA-SEQUENCE:0'];
       fs.writeFileSync(swarmVodManifestPath, vodManifestHeaders.join('\n') + '\n');
     }
 
@@ -197,7 +198,7 @@ export class SwarmStreamUploader {
 
   private buildLiveManifest() {
     const swarmLiveManifestPath = path.join(this.streamPath, this.liveSwarmManifestName);
-    const liveManifestHeaders = [...this.hlsOriginalHeaders, `#EXT-X-MEDIA-SEQUENCE: ${this.mediaSequence}`];
+    const liveManifestHeaders = [...this.hlsOriginalHeaders, `#EXT-X-MEDIA-SEQUENCE:${this.mediaSequence}`];
 
     const liveManifestContent = liveManifestHeaders.join('\n') + '\n' + this.segmentBuffer.join('\n') + '\n';
     fs.writeFileSync(swarmLiveManifestPath, liveManifestContent);
@@ -303,7 +304,7 @@ export class SwarmStreamUploader {
     this.segmentBuffer.push(segmentEntry);
   }
 
-  private checkFinalVODManifest(): boolean {
+  private isFinalVODManifestValid(): boolean {
     const vodManifestPath = path.join(this.streamPath, this.vodSwarmManifestName);
     if (!fs.existsSync(vodManifestPath)) {
       return false;

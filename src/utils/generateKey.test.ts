@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import dayjs from 'dayjs';
 
-import { generateStreamKey } from './generateKey';
+import { generateStreamKey } from './generateKey.js';
 
 describe('generateStreamKey', () => {
   const stream = 'test_stream';

@@ -1,13 +1,13 @@
 import { Bee } from '@ethersphere/bee-js';
 import fs from 'fs';
 import path from 'path';
+import PQueue from 'p-queue';
 
-import { getEnvVariable } from '../utils/common';
+import { getEnvVariable, retryAwaitableAsync } from '../utils/common.js';
 
-import { Logger } from './Logger';
-import { MediaWatcher } from './MediaWatcher';
-import { Queue } from './Queue';
-import { SwarmStreamUploader } from './SwarmStreamUploader';
+import { Logger } from './Logger.js';
+import { MediaWatcher } from './MediaWatcher.js';
+import { SwarmStreamUploader } from './SwarmStreamUploader.js';
 
 const SWARM_RPC_URL = getEnvVariable('SWARM_RPC_URL');
 const STREAM_KEY = getEnvVariable('STREAM_KEY');
@@ -17,7 +17,7 @@ const GSOC_TOPIC = getEnvVariable('GSOC_TOPIC');
 
 export class DirectoryHandler {
   private logger = Logger.getInstance();
-  private queue: Queue;
+  private queue: PQueue;
 
   private static instance: DirectoryHandler;
 
@@ -26,7 +26,7 @@ export class DirectoryHandler {
   private static watchers = new Map<string, MediaWatcher>();
 
   private constructor() {
-    this.queue = new Queue();
+    this.queue = new PQueue({ concurrency: 1 });
   }
 
   public static getInstance(): DirectoryHandler {
@@ -55,7 +55,7 @@ export class DirectoryHandler {
     const mediatype = streamPath.startsWith('/audio') ? 'audio' : 'video';
     this.logger.info(`Handling directory: ${fullPath} with mediatype: ${mediatype}`);
 
-    this.queue.enqueue(async () => {
+    this.queue.add(async () => {
       try {
         // TODO: support rpc and owned nodes
         const bee = new Bee(`${SWARM_RPC_URL}/write`);
@@ -97,10 +97,20 @@ export class DirectoryHandler {
       DirectoryHandler.uploaders.delete(fullPath);
     }
 
-    if (fs.existsSync(fullPath)) {
-      fs.rmSync(fullPath, { recursive: true, force: true });
-    }
+    await this.deleteDirectorySafe(fullPath);
 
     this.logger.info(`Stopped handling directory: ${fullPath}`);
+  }
+
+  private async deleteDirectorySafe(dirPath: string): Promise<void> {
+    return retryAwaitableAsync(
+      async () => {
+        if (!fs.existsSync(dirPath)) return;
+        fs.rmSync(dirPath, { recursive: true, force: true });
+        this.logger.info(`Successfully deleted: ${dirPath}`);
+      },
+      10,
+      1000,
+    );
   }
 }

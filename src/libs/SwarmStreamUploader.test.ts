@@ -65,7 +65,7 @@ jest.mock('./Queue', () => ({
   })),
 }));
 
-import { SwarmStreamUploader } from './SwarmStreamUploader';
+import { SwarmStreamUploader } from './SwarmStreamUploader.js';
 
 const mockBee = {
   uploadData: jest.fn().mockResolvedValue({ reference: { toHex: () => 'mockRef' } }),

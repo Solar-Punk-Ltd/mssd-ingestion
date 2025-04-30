@@ -20,7 +20,7 @@ jest.mock('../libs/ErrorHandler', () => ({
   },
 }));
 
-import { retryAwaitableAsync, sleep } from './common';
+import { retryAwaitableAsync, sleep } from './common.js';
 
 beforeEach(() => {
   jest.clearAllMocks();

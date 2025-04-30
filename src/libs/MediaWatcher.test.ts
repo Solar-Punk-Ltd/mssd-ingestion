@@ -1,6 +1,6 @@
 import fs from 'fs';
 
-import { MediaWatcher } from './MediaWatcher';
+import { MediaWatcher } from './MediaWatcher.js';
 
 jest.useFakeTimers();
 

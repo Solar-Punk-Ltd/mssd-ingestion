@@ -2,9 +2,9 @@ import { Command } from 'commander';
 import crypto from 'crypto';
 import dayjs from 'dayjs';
 
-import { Logger } from '../libs/Logger';
+import { Logger } from '../libs/Logger.js';
 
-import { getEnvVariable } from './common';
+import { getEnvVariable } from './common.js';
 
 const logger = Logger.getInstance();
 
