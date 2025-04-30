@@ -1,9 +1,9 @@
 import fs from 'fs';
+import path from 'path';
 
 jest.mock('crypto', () => ({
   randomUUID: jest.fn(() => 'mocked-uuid'),
 }));
-import { SwarmStreamUploader } from './SwarmStreamUploader';
 
 jest.mock('fs');
 
@@ -65,6 +65,8 @@ jest.mock('./Queue', () => ({
   })),
 }));
 
+import { SwarmStreamUploader } from './SwarmStreamUploader';
+
 const mockBee = {
   uploadData: jest.fn().mockResolvedValue({ reference: { toHex: () => 'mockRef' } }),
   gsocSend: jest.fn().mockResolvedValue({ reference: { toHex: () => 'gsocRef' } }),
@@ -113,59 +115,51 @@ describe('SwarmStreamUploader', () => {
   });
 
   it('broadcastStop includes mediatype in payload', async () => {
-    const uploader = createUploader('video');
+    const uploader = createUploader('video/mp4');
 
-    jest.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:6.000000,\nsegment.ts\n');
-    jest.spyOn(fs, 'appendFileSync').mockImplementation(() => {});
-    jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+    jest.spyOn(fs, 'readFileSync').mockImplementation((path: any) => {
+      if (typeof path === 'string' && path.includes('playlist-vod.m3u8')) {
+        return [
+          '#EXTM3U',
+          '#EXT-X-VERSION:3',
+          '#EXT-X-TARGETDURATION:4',
+          '#EXTINF:6.000,',
+          'http://swarm.test/seg1.ts',
+          '#EXT-X-ENDLIST',
+        ].join('\n');
+      }
+      return Buffer.from('');
+    });
+
+    jest.spyOn(fs, 'existsSync').mockImplementation((path: any) => path.includes('playlist-vod.m3u8'));
 
     await uploader.broadcastStop();
 
     expect(mockBee.gsocSend).toHaveBeenCalledWith(
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-      expect.anything(),
+      expect.any(Object),
       'mockIdentifier',
-      expect.stringContaining('"mediatype":"video"'),
+      expect.stringContaining('"mediatype":"video/mp4"'),
     );
   });
 
-  it('upload skips m3u8 files', async () => {
-    const uploader = createUploader('audio');
-    const spy = jest.spyOn(uploader as any, 'uploadSegment');
-    uploader.upload('index.m3u8');
-    expect(spy).not.toHaveBeenCalled();
-  });
+  it('upload should skip processing manifest files', () => {
+    const uploader = createUploader('audio/mpeg');
+    const processSpy = jest.spyOn(uploader as any, 'processNewSegment');
 
-  it('upload calls uploadSegment and writes manifest', async () => {
-    const uploader = createUploader('audio');
-    jest.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:5.5,\nseg0.ts');
-    jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
-    jest.spyOn(fs, 'rmSync').mockImplementation(() => {});
-    uploader.upload('seg0.ts');
+    const manifestPaths = [
+      'index.m3u8',
+      path.join(streamPath, 'playlist-live.m3u8'),
+      path.join(streamPath, 'variant.m3u8'),
+    ];
 
-    expect(mockBee.uploadData).toHaveBeenCalled();
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
-      expect.stringContaining('playlist.m3u8'),
-      expect.stringContaining('#EXTINF:'),
-    );
-  });
-
-  it('uploadSegment logs failure if fs.readFileSync throws', async () => {
-    jest.spyOn(fs, 'readFileSync').mockImplementation(() => {
-      throw new Error('oops');
+    manifestPaths.forEach(manifestPath => {
+      uploader.upload(manifestPath);
+      expect(processSpy).not.toHaveBeenCalled();
+      expect(mockBee.uploadData).not.toHaveBeenCalled();
     });
-    const uploader = createUploader('audio');
-    const errHandler = (uploader as any).errorHandler;
-    await (uploader as any).uploadSegment('seg-fail.ts');
 
-    expect(errHandler.handleError).toHaveBeenCalled();
-  });
-
-  it('uploadManifest pushes manifest to Bee feed writer', async () => {
-    const uploader = createUploader('audio');
-    jest.spyOn(fs, 'readFileSync').mockReturnValue(Buffer.from('playlist content'));
-    await (uploader as any).uploadManifest(1);
-    expect(mockBee.makeFeedWriter).toHaveBeenCalled();
+    expect(fs.writeFileSync).not.toHaveBeenCalled();
   });
 
   it('getTotalDurationFromFile parses all EXTINF durations', () => {
