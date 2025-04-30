@@ -128,7 +128,7 @@ export class SwarmStreamUploader {
     this.addToSegmentBuffer(ref);
 
     this.segmentQueue.add(async () => {
-      const result = await this.uploadDataAsSoc(this.index, segmentData);
+      const result = await this.uploadDataToBee(segmentData);
       if (result) {
         this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
       } else {
