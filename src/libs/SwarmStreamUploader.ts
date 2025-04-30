@@ -70,9 +70,6 @@ export class SwarmStreamUploader {
   }
 
   public async broadcastStop() {
-    await this.segmentQueue.waitForProcessing();
-    await this.manifestQueue.waitForProcessing();
-
     const validVODManifest = this.checkFinalVODManifest();
     if (!validVODManifest) {
       return;
@@ -82,6 +79,9 @@ export class SwarmStreamUploader {
 
     const finalIndex = this.index++;
     this.uploadManifest(this.vodSwarmManifestName, finalIndex);
+
+    await this.segmentQueue.waitForProcessing();
+    await this.manifestQueue.waitForProcessing();
 
     const identifier = Identifier.fromString(this.gsocRawTopic);
     const data = {
@@ -155,7 +155,7 @@ export class SwarmStreamUploader {
 
   private async uploadDataAsSoc(index: number, data: Uint8Array) {
     try {
-      const { uploadPayload } = this.bee.makeFeedWriter(Topic.fromString(this.streamRawTopic), this.streamSigner);
+      const { uploadPayload } = this.bee.makeFeedWriter(Topic.fromString(this.streamRawTopic), this.streamSigner, {});
       return uploadPayload(this.stamp, data, { index });
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadDataAsSoc');
@@ -165,7 +165,11 @@ export class SwarmStreamUploader {
 
   private async uploadDataToBee(data: Uint8Array) {
     try {
-      return retryAwaitableAsync(() => this.bee.uploadData(this.stamp, data));
+      return retryAwaitableAsync(() =>
+        this.bee.uploadData(this.stamp, data, {
+          redundancyLevel: 1,
+        }),
+      );
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadDataToBee');
       return null;
