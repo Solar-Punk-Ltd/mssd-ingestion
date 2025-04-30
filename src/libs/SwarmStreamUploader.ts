@@ -165,11 +165,7 @@ export class SwarmStreamUploader {
 
   private async uploadDataToBee(data: Uint8Array) {
     try {
-      return retryAwaitableAsync(() =>
-        this.bee.uploadData(this.stamp, data, {
-          redundancyLevel: 1,
-        }),
-      );
+      return retryAwaitableAsync(() => this.bee.uploadData(this.stamp, data));
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadDataToBee');
       return null;
