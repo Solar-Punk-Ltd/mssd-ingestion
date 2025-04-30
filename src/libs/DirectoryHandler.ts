@@ -102,6 +102,7 @@ export class DirectoryHandler {
     this.logger.info(`Stopped handling directory: ${fullPath}`);
   }
 
+  // TODO: use a sync retry function
   private async deleteDirectorySafe(dirPath: string): Promise<void> {
     return retryAwaitableAsync(
       async () => {

@@ -19,8 +19,8 @@ export class SwarmStreamUploader {
   private readonly segmentBufferSize = 10;
   private mediaSequence = 0;
 
-  private segmentQueue = new PQueue({ concurrency: 1 });
-  private manifestQueue = new PQueue({ concurrency: 1 });
+  private segmentQueue = new PQueue({ concurrency: 10 });
+  private manifestQueue = new PQueue({ concurrency: 10 });
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
   private segmentBuffer: string[] = [];
@@ -112,22 +112,25 @@ export class SwarmStreamUploader {
     const segmentEntry = this.getSegmentEntry(segmentPath, data.ref);
     this.buildVODManifest(segmentEntry);
 
-    this.processNewSegment(segmentPath, data.segmentData);
+    this.processNewSegment(segmentPath, data.segmentData, data.ref);
+    this.processLiveManifest(segmentPath);
   }
 
-  private processNewSegment(segmentPath: string, segmentData: Uint8Array) {
+  private processLiveManifest(segmentPath: string) {
+    this.buildLiveManifest();
+
     const filename = path.basename(segmentPath);
     const fileIndex = parseInt(filename.match(/\d+/)?.[0] || '', 10);
+    this.uploadManifest(this.liveSwarmManifestName, fileIndex);
+  }
+
+  private processNewSegment(segmentPath: string, segmentData: Uint8Array, ref: string) {
+    this.addToSegmentBuffer(ref);
 
     this.segmentQueue.add(async () => {
-      const result = await this.uploadDataToBee(segmentData);
+      const result = await this.uploadDataAsSoc(this.index, segmentData);
       if (result) {
-        const hexRef = result.reference.toHex();
-        this.logger.log(`Segment upload result: ${segmentPath}`, hexRef);
-
-        this.addToSegmentBuffer(hexRef);
-        this.buildLiveManifest();
-        this.uploadManifest(this.liveSwarmManifestName, fileIndex);
+        this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
       } else {
         this.logger.error(`Failed to upload segment: ${segmentPath}`);
       }
