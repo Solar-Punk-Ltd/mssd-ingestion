@@ -1,19 +1,20 @@
 import { Bee, Bytes, Identifier, PrivateKey, Topic } from '@ethersphere/bee-js';
-import { makeChunkedFile } from '@fairdatasociety/bmt-js';
+import pkg from '@fairdatasociety/bmt-js';
 import crypto from 'crypto';
 import fs from 'fs';
+import PQueue from 'p-queue';
 import path from 'path';
+const { makeChunkedFile } = pkg;
 
-import { retryAwaitableAsync } from '../utils/common';
+import { retryAwaitableAsync } from '../utils/common.js';
 
-import { ErrorHandler } from './ErrorHandler';
-import { Logger } from './Logger';
-import { ManifestManager } from './ManifestManager';
-import { Queue } from './Queue';
+import { ErrorHandler } from './ErrorHandler.js';
+import { Logger } from './Logger.js';
+import { ManifestManager } from './ManifestManager.js';
 
 export class SwarmStreamUploader {
-  private segmentQueue = new Queue();
-  private manifestQueue = new Queue();
+  private segmentQueue = new PQueue({ concurrency: 10 });
+  private manifestQueue = new PQueue({ concurrency: 10 });
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
 
@@ -66,16 +67,18 @@ export class SwarmStreamUploader {
   }
 
   public async broadcastStop() {
-    await this.segmentQueue.waitForProcessing();
-    await this.manifestQueue.waitForProcessing();
-
-    const valid = this.manifestManager.checkFinalVODManifest();
-    if (!valid) return;
+    const valid = this.manifestManager.isFinalVODManifestValid();
+    if (!valid) {
+      return;
+    }
 
     this.manifestManager.closeVODManifest();
 
     const finalIndex = this.index++;
-    this.uploadManifest('playlist-vod.m3u8', finalIndex);
+    this.uploadManifest(this.manifestManager.getLiveManifestName(), finalIndex);
+
+    await this.segmentQueue.onIdle();
+    await this.manifestQueue.onIdle();
 
     const identifier = Identifier.fromString(this.gsocRawTopic);
     const data = {
@@ -83,7 +86,7 @@ export class SwarmStreamUploader {
       topic: this.streamRawTopic,
       state: 'VOD',
       index: finalIndex,
-      duration: this.manifestManager.getTotalDurationFromFile(),
+      duration: this.manifestManager.getTotalDurationFromVodManifest(),
       mediatype: this.mediatype,
     };
 
@@ -91,7 +94,9 @@ export class SwarmStreamUploader {
   }
 
   public upload(segmentPath: string) {
-    if (segmentPath.includes('m3u8')) return;
+    if (segmentPath.includes('m3u8')) {
+      return;
+    }
 
     const data = this.getSegmentData(segmentPath);
     if (!data?.ref || !data?.segmentData) {
@@ -102,22 +107,25 @@ export class SwarmStreamUploader {
     const segmentEntry = this.manifestManager.getSegmentEntry(segmentPath, data.ref);
     this.manifestManager.buildVODManifest(segmentEntry);
 
-    this.processNewSegment(segmentPath, data.segmentData);
+    this.processNewSegment(segmentPath, data.segmentData, data.ref);
+    this.processLiveManifest(segmentPath);
   }
 
-  private processNewSegment(segmentPath: string, segmentData: Uint8Array) {
+  private processLiveManifest(segmentPath: string) {
+    this.manifestManager.buildLiveManifest();
+
     const filename = path.basename(segmentPath);
     const fileIndex = parseInt(filename.match(/\d+/)?.[0] || '', 10);
+    this.uploadManifest(this.manifestManager.getLiveManifestName(), fileIndex);
+  }
 
-    this.segmentQueue.enqueue(async () => {
+  private processNewSegment(segmentPath: string, segmentData: Uint8Array, ref: string) {
+    this.manifestManager.addToSegmentBuffer(ref);
+
+    this.segmentQueue.add(async () => {
       const result = await this.uploadDataToBee(segmentData);
       if (result) {
-        const hexRef = result.reference.toHex();
-        this.logger.log(`Segment upload result: ${segmentPath}`, hexRef);
-
-        this.manifestManager.addToSegmentBuffer(hexRef);
-        this.manifestManager.buildLiveManifest();
-        this.uploadManifest('playlist-live.m3u8', fileIndex);
+        this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
       } else {
         this.logger.error(`Failed to upload segment: ${segmentPath}`);
       }
@@ -130,7 +138,7 @@ export class SwarmStreamUploader {
       const fullPath = path.join(this.streamPath, manifestName);
       const manifestData = fs.readFileSync(fullPath);
 
-      this.manifestQueue.enqueue(async () => {
+      this.manifestQueue.add(async () => {
         const result = await this.uploadDataAsSoc(index, manifestData);
         if (result) {
           this.logger.log(`Manifest upload result: ${fullPath}`, result.reference.toHex());
@@ -146,7 +154,7 @@ export class SwarmStreamUploader {
   private async uploadDataAsSoc(index: number, data: Uint8Array) {
     try {
       const { uploadPayload } = this.bee.makeFeedWriter(Topic.fromString(this.streamRawTopic), this.streamSigner);
-      return uploadPayload(this.stamp, data, { index });
+      return retryAwaitableAsync(() => uploadPayload(this.stamp, data, { index }));
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadDataAsSoc');
       return null;

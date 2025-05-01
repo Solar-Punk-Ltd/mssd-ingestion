@@ -1,51 +1,51 @@
-import path from 'path';
+import { beforeAll, beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
-const loggerMock = {
-  error: jest.fn(),
-  info: jest.fn(),
-  warn: jest.fn(),
-};
+vi.mock('../libs/Logger', () => {
+  const mockLogger = {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+  };
 
-const errorHandlerMock = {
-  handleError: jest.fn(),
-};
+  return {
+    Logger: {
+      getInstance: () => mockLogger,
+    },
+  };
+});
 
-const gentEnvMock = jest.fn();
+vi.mock('../utils/common', () => {
+  const mockGetEnv = vi.fn();
 
-jest.mock('./Logger', () => ({
-  Logger: {
-    getInstance: () => loggerMock,
-  },
-}));
+  return {
+    getEnvVariable: mockGetEnv,
+  };
+});
 
-jest.mock('./ErrorHandler', () => ({
-  ErrorHandler: {
-    getInstance: () => errorHandlerMock,
-  },
-}));
-
-jest.mock('../utils/common', () => ({
-  getEnvVariable: () => gentEnvMock,
-}));
-
-jest.mock('node-media-server');
-jest.mock('child_process', () => ({
-  execSync: jest.fn(),
+vi.mock('node-media-server');
+vi.mock('child_process', () => ({
+  execSync: vi.fn(),
 }));
 
 import { execSync } from 'child_process';
 import NodeMediaServer from 'node-media-server';
+import path from 'path';
 
-import { startRtmpServer } from '../libs/RTMPServer';
+import { Logger } from '../libs/Logger.js';
+import { startRtmpServer } from '../libs/RTMPServer.js';
+import { getEnvVariable } from '../utils/common.js';
+
+const mockLogger = Logger.getInstance();
+const mockGetEnv = getEnvVariable as Mock;
 
 describe('startRtmpServer', () => {
-  const mockRun = jest.fn();
-  const mockStop = jest.fn();
-  const mockOn = jest.fn();
-  const mockGetSession = jest.fn();
+  const mockRun = vi.fn();
+  const mockStop = vi.fn();
+  const mockOn = vi.fn();
+  const mockGetSession = vi.fn();
 
   beforeAll(() => {
-    (NodeMediaServer as jest.Mock).mockImplementation(() => ({
+    (NodeMediaServer as Mock).mockImplementation(() => ({
       run: mockRun,
       stop: mockStop,
       on: mockOn,
@@ -54,35 +54,35 @@ describe('startRtmpServer', () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('should log an error if mediaRootPath is not provided', () => {
     startRtmpServer('', '/path/to/ffmpeg');
-    expect(loggerMock.error).toHaveBeenCalledWith('Media root path is required.');
+    expect(mockLogger.error).toHaveBeenCalledWith('Media root path is required.');
     expect(mockRun).not.toHaveBeenCalled();
   });
 
   it('should log an error if ffmpegPath is not provided and FFmpeg is not installed', () => {
-    (execSync as jest.Mock).mockImplementation(() => {
+    (execSync as Mock).mockImplementation(() => {
       throw new Error('FFmpeg not found');
     });
 
     expect(() => startRtmpServer('/path/to/media', '')).toThrow('FFmpeg not found');
-    expect(loggerMock.error).toHaveBeenCalledWith('ffmpeg not found, path is required');
+    expect(mockLogger.error).toHaveBeenCalledWith('ffmpeg not found, path is required');
   });
 
   it('should log an error if FFmpeg is not installed or not found in the specified path', () => {
-    (execSync as jest.Mock).mockImplementation(() => {
+    (execSync as Mock).mockImplementation(() => {
       throw new Error('FFmpeg not found');
     });
 
     expect(() => startRtmpServer('/path/to/media', '/path/to/ffmpeg')).toThrow('FFmpeg not found');
-    expect(loggerMock.error).toHaveBeenCalledWith('FFmpeg is not installed or not found in the specified path.');
+    expect(mockLogger.error).toHaveBeenCalledWith('FFmpeg is not installed or not found in the specified path.');
   });
 
   it('should start the NodeMediaServer if all parameters are valid', () => {
-    (execSync as jest.Mock).mockImplementation(() => Buffer.from('ffmpeg version 2.7.4'));
+    (execSync as Mock).mockImplementation(() => Buffer.from('ffmpeg version 2.7.4'));
 
     startRtmpServer('/path/to/media', '/path/to/ffmpeg');
 
@@ -130,14 +130,14 @@ describe('startRtmpServer', () => {
   });
 
   it('should handle prePublish event when streamPath is invalid', () => {
-    gentEnvMock.mockReturnValue('secret');
+    mockGetEnv.mockReturnValue('secret');
 
     const mockSession = {
-      reject: jest.fn(),
+      reject: vi.fn(),
     };
 
     mockGetSession.mockReturnValue(mockSession);
-    (execSync as jest.Mock).mockImplementation(() => Buffer.from('ffmpeg version 4.3'));
+    (execSync as Mock).mockImplementation(() => Buffer.from('ffmpeg version 4.3'));
 
     startRtmpServer('/path/to/media', '/path/to/ffmpeg');
 
@@ -148,7 +148,7 @@ describe('startRtmpServer', () => {
       const invalidStreamPath = '/invalid/stream';
       prePublishCallback('123', invalidStreamPath, { exp: '12345', sign: 'valid-signature' });
 
-      expect(loggerMock.error).toHaveBeenCalledWith(
+      expect(mockLogger.error).toHaveBeenCalledWith(
         `[prePublish] Error: The stream must be either video or audio: ${invalidStreamPath}`,
       );
       expect(mockSession.reject).toHaveBeenCalled();

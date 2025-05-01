@@ -10,12 +10,13 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
-    "module": "CommonJS",
-    "moduleResolution": "node",
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": false,
     "typeRoots": ["./node_modules/@types", "./types"],
+    "types": ["vitest/globals", "vitest/importMeta"]
   },
   "include": ["src/**/*", "types/**/*"],
   "exclude": ["**/*.js"]

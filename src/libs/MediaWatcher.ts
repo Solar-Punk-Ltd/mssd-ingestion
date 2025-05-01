@@ -1,8 +1,8 @@
 import { FSWatcher, watch } from 'chokidar';
 import fs from 'fs';
 
-import { ErrorHandler } from './ErrorHandler';
-import { Logger } from './Logger';
+import { ErrorHandler } from './ErrorHandler.js';
+import { Logger } from './Logger.js';
 
 export class MediaWatcher {
   private watcher: FSWatcher | null = null;

@@ -2,16 +2,19 @@ import { execSync } from 'child_process';
 import crypto from 'crypto';
 import NodeMediaServer from 'node-media-server';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-import { getEnvVariable } from '../utils/common';
+import { getEnvVariable } from '../utils/common.js';
 
-import { DirectoryHandler } from './DirectoryHandler';
-import { Logger } from './Logger';
+import { DirectoryHandler } from './DirectoryHandler.js';
+import { Logger } from './Logger.js';
 
 const logger = Logger.getInstance();
 
 function resolveFFmpegPath(providedPath?: string) {
-  if (providedPath) return providedPath;
+  if (providedPath) {
+    return providedPath;
+  }
 
   try {
     const defaultPath = execSync('which ffmpeg').toString().trim();
@@ -71,6 +74,7 @@ export function startRtmpServer(mRootPath: string, providedFFmpegPath: string): 
     return;
   }
 
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const mediaRootPath = path.resolve(__dirname, '..', 'media');
 
   const ffmpegPath = resolveFFmpegPath(providedFFmpegPath);

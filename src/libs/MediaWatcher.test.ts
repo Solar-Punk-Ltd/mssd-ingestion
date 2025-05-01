@@ -1,40 +1,42 @@
-import fs from 'fs';
+import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
-import { MediaWatcher } from './MediaWatcher';
+vi.useFakeTimers();
 
-jest.useFakeTimers();
+const loggerMock = { log: vi.fn() };
+const errorHandlerMock = { handleError: vi.fn() };
 
-const loggerMock = { log: jest.fn() };
-const errorHandlerMock = { handleError: jest.fn() };
-
-const mockOn = jest.fn().mockReturnThis();
-const mockClose = jest.fn();
+const mockOn = vi.fn().mockReturnThis();
+const mockClose = vi.fn();
 const mockWatcher = { on: mockOn, close: mockClose };
 
-jest.mock('chokidar', () => ({
-  watch: jest.fn(() => mockWatcher),
+vi.mock('chokidar', () => ({
+  watch: vi.fn(() => mockWatcher),
 }));
 
-jest.mock('fs');
+vi.mock('fs');
 
-jest.mock('./Logger', () => ({
+vi.mock('./Logger', () => ({
   Logger: { getInstance: () => loggerMock },
 }));
 
-jest.mock('./ErrorHandler', () => ({
+vi.mock('./ErrorHandler', () => ({
   ErrorHandler: { getInstance: () => errorHandlerMock },
 }));
 
+import fs from 'fs';
+
+import { MediaWatcher } from './MediaWatcher.js';
+
 describe('MediaWatcher', () => {
   const watchPath = '/some/media/path';
-  const onAddMock = jest.fn();
+  const onAddMock = vi.fn();
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('should start watching immediately if folder exists', () => {
-    (fs.existsSync as jest.Mock).mockReturnValue(true);
+    (fs.existsSync as Mock).mockReturnValue(true);
 
     const watcher = new MediaWatcher(watchPath, onAddMock);
     watcher.start();
@@ -46,7 +48,7 @@ describe('MediaWatcher', () => {
   });
 
   it('should retry until folder exists, then start watching', () => {
-    (fs.existsSync as jest.Mock).mockReturnValueOnce(false).mockReturnValueOnce(false).mockReturnValueOnce(true); // found on 3rd try
+    (fs.existsSync as Mock).mockReturnValueOnce(false).mockReturnValueOnce(false).mockReturnValueOnce(true); // found on 3rd try
 
     const watcher = new MediaWatcher(watchPath, onAddMock);
     watcher.start();
@@ -54,10 +56,10 @@ describe('MediaWatcher', () => {
     expect(fs.existsSync).toHaveBeenCalledTimes(1);
     expect(loggerMock.log).toHaveBeenCalledWith(`[MediaWatcher] Directory not found: ${watchPath}, retrying in 1s...`);
 
-    jest.advanceTimersByTime(1000); // retry 1
+    vi.advanceTimersByTime(1000); // retry 1
     expect(fs.existsSync).toHaveBeenCalledTimes(2);
 
-    jest.advanceTimersByTime(1000); // retry 2
+    vi.advanceTimersByTime(1000); // retry 2
     expect(fs.existsSync).toHaveBeenCalledTimes(3);
 
     expect(loggerMock.log).toHaveBeenCalledWith(`[MediaWatcher] Watching started on: ${watchPath}`);
@@ -65,13 +67,13 @@ describe('MediaWatcher', () => {
   });
 
   it('should stop retrying after maxRetries and report error', () => {
-    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (fs.existsSync as Mock).mockReturnValue(false);
 
     const watcher = new MediaWatcher(watchPath, onAddMock);
     watcher.start();
 
     for (let i = 0; i < 60; i++) {
-      jest.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(1000);
     }
 
     expect(loggerMock.log).toHaveBeenCalledWith(`[MediaWatcher] Folder not found after 60 retries. Giving up.`);
@@ -84,7 +86,7 @@ describe('MediaWatcher', () => {
   });
 
   it('should close the watcher and log', () => {
-    (fs.existsSync as jest.Mock).mockReturnValue(true);
+    (fs.existsSync as Mock).mockReturnValue(true);
     const watcher = new MediaWatcher(watchPath, onAddMock);
     watcher.start();
 
@@ -95,7 +97,7 @@ describe('MediaWatcher', () => {
   });
 
   it('should handle watcher error event', () => {
-    (fs.existsSync as jest.Mock).mockReturnValue(true);
+    (fs.existsSync as Mock).mockReturnValue(true);
     const watcher = new MediaWatcher(watchPath, onAddMock);
     watcher.start();
 

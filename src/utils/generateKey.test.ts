@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import dayjs from 'dayjs';
+import { describe, expect, it, vi } from 'vitest';
 
-import { generateStreamKey } from './generateKey';
+import { generateStreamKey } from './generateKey.js';
 
 describe('generateStreamKey', () => {
   const stream = 'test_stream';
@@ -23,7 +24,7 @@ describe('generateStreamKey', () => {
     const expectedSign = crypto.createHmac('sha256', secret).update(expectedBase).digest('hex');
 
     // Freeze time to avoid mismatch due to second differences
-    jest.spyOn(dayjs.prototype, 'unix').mockReturnValue(exp);
+    vi.spyOn(dayjs.prototype, 'unix').mockReturnValue(exp);
 
     const streamKey = generateStreamKey(stream, secret, expiresInMinutes);
 
