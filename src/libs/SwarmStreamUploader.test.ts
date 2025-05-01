@@ -1,15 +1,20 @@
-import fs from 'fs';
-import path from 'path';
+import { describe, expect, it, vi } from 'vitest';
 
-jest.mock('crypto', () => ({
-  randomUUID: jest.fn(() => 'mocked-uuid'),
-}));
+vi.mock('crypto', async () => {
+  const mock = {
+    randomUUID: vi.fn(() => 'mocked-uuid'),
+  };
 
-jest.mock('fs');
+  return {
+    default: mock,
+    ...mock,
+  };
+});
+vi.mock('fs');
 
-jest.mock('@ethersphere/bee-js', () => ({
-  Bee: jest.fn(() => mockBee),
-  PrivateKey: jest.fn().mockImplementation(() => ({
+vi.mock('@ethersphere/bee-js', () => ({
+  Bee: vi.fn(() => mockBee),
+  PrivateKey: vi.fn().mockImplementation(() => ({
     publicKey: () => ({
       address: () => ({
         toHex: () => '0xOwnerAddress',
@@ -17,10 +22,10 @@ jest.mock('@ethersphere/bee-js', () => ({
     }),
   })),
   Identifier: {
-    fromString: jest.fn(() => 'mockIdentifier'),
+    fromString: vi.fn(() => 'mockIdentifier'),
   },
   Topic: {
-    fromString: jest.fn(() => 'mockTopic'),
+    fromString: vi.fn(() => 'mockTopic'),
   },
   Bytes: {
     fromSlice: () => ({
@@ -29,49 +34,59 @@ jest.mock('@ethersphere/bee-js', () => ({
   },
 }));
 
-jest.mock('@fairdatasociety/bmt-js', () => ({
-  makeChunkedFile: jest.fn(() => ({
-    rootChunk: () => ({
-      address: () => new Uint8Array([0xaa]),
-    }),
-  })),
+vi.mock('@fairdatasociety/bmt-js', async () => {
+  const mock = {
+    makeChunkedFile: vi.fn(() => ({
+      rootChunk: () => ({
+        address: () => new Uint8Array([0xaa]),
+      }),
+    })),
+  };
+
+  return {
+    default: mock,
+    ...mock,
+  };
+});
+
+vi.mock('../utils/common', () => ({
+  retryAwaitableAsync: vi.fn(fn => fn()),
 }));
 
-jest.mock('../utils/common', () => ({
-  retryAwaitableAsync: jest.fn(fn => fn()),
-}));
-
-jest.mock('./Logger', () => ({
+vi.mock('./Logger', () => ({
   Logger: {
     getInstance: () => ({
-      log: jest.fn(),
-      error: jest.fn(),
+      log: vi.fn(),
+      error: vi.fn(),
     }),
   },
 }));
 
-jest.mock('./ErrorHandler', () => ({
+vi.mock('./ErrorHandler', () => ({
   ErrorHandler: {
     getInstance: () => ({
-      handleError: jest.fn(),
+      handleError: vi.fn(),
     }),
   },
 }));
 
-jest.mock('./Queue', () => ({
-  Queue: jest.fn().mockImplementation(() => ({
-    enqueue: jest.fn(fn => fn()),
-    waitForProcessing: jest.fn(() => Promise.resolve()),
+vi.mock('./Queue', () => ({
+  Queue: vi.fn().mockImplementation(() => ({
+    enqueue: vi.fn(fn => fn()),
+    waitForProcessing: vi.fn(() => Promise.resolve()),
   })),
 }));
+
+import fs from 'fs';
+import path from 'path';
 
 import { SwarmStreamUploader } from './SwarmStreamUploader.js';
 
 const mockBee = {
-  uploadData: jest.fn().mockResolvedValue({ reference: { toHex: () => 'mockRef' } }),
-  gsocSend: jest.fn().mockResolvedValue({ reference: { toHex: () => 'gsocRef' } }),
-  makeFeedWriter: jest.fn().mockReturnValue({
-    uploadPayload: jest.fn().mockResolvedValue({ reference: { toHex: () => 'socRef' } }),
+  uploadData: vi.fn().mockResolvedValue({ reference: { toHex: () => 'mockRef' } }),
+  gsocSend: vi.fn().mockResolvedValue({ reference: { toHex: () => 'gsocRef' } }),
+  makeFeedWriter: vi.fn().mockReturnValue({
+    uploadPayload: vi.fn().mockResolvedValue({ reference: { toHex: () => 'socRef' } }),
   }),
 };
 
@@ -117,7 +132,7 @@ describe('SwarmStreamUploader', () => {
   it('broadcastStop includes mediatype in payload', async () => {
     const uploader = createUploader('video/mp4');
 
-    jest.spyOn(fs, 'readFileSync').mockImplementation((path: any) => {
+    vi.spyOn(fs, 'readFileSync').mockImplementation((path: any) => {
       if (typeof path === 'string' && path.includes('playlist-vod.m3u8')) {
         return [
           '#EXTM3U',
@@ -131,7 +146,7 @@ describe('SwarmStreamUploader', () => {
       return Buffer.from('');
     });
 
-    jest.spyOn(fs, 'existsSync').mockImplementation((path: any) => path.includes('playlist-vod.m3u8'));
+    vi.spyOn(fs, 'existsSync').mockImplementation((path: any) => path.includes('playlist-vod.m3u8'));
 
     await uploader.broadcastStop();
 
@@ -145,7 +160,7 @@ describe('SwarmStreamUploader', () => {
 
   it('upload should skip processing manifest files', () => {
     const uploader = createUploader('audio/mpeg');
-    const processSpy = jest.spyOn(uploader as any, 'processNewSegment');
+    const processSpy = vi.spyOn(uploader as any, 'processNewSegment');
 
     const manifestPaths = [
       'index.m3u8',
@@ -163,7 +178,7 @@ describe('SwarmStreamUploader', () => {
   });
 
   it('getTotalDurationFromFile parses all EXTINF durations', () => {
-    jest.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:3.1,\n#EXTINF:4.9,\n');
+    vi.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:3.1,\n#EXTINF:4.9,\n');
     const uploader = createUploader('audio');
     const total = (uploader as any).getTotalDurationFromFile();
     expect(total).toBeCloseTo(8.0);

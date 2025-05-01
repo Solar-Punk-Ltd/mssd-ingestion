@@ -1,3 +1,5 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { Logger } from './Logger.js';
 
 describe('Logger', () => {
@@ -6,15 +8,15 @@ describe('Logger', () => {
   beforeEach(() => {
     logger = Logger.getInstance();
 
-    jest.spyOn(console, 'log').mockImplementation(() => {});
-    jest.spyOn(console, 'info').mockImplementation(() => {});
-    jest.spyOn(console, 'warn').mockImplementation(() => {});
-    jest.spyOn(console, 'error').mockImplementation(() => {});
-    jest.spyOn(console, 'debug').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('should log with console.log and include [LOG]', () => {

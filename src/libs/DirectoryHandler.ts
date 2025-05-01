@@ -1,7 +1,7 @@
 import { Bee } from '@ethersphere/bee-js';
 import fs from 'fs';
-import path from 'path';
 import PQueue from 'p-queue';
+import path from 'path';
 
 import { getEnvVariable, retryAwaitableAsync } from '../utils/common.js';
 

@@ -1,9 +1,9 @@
 import { Bee, Bytes, Identifier, PrivateKey, Topic } from '@ethersphere/bee-js';
+import pkg from '@fairdatasociety/bmt-js';
 import crypto from 'crypto';
 import fs from 'fs';
 import PQueue from 'p-queue';
 import path from 'path';
-import pkg from '@fairdatasociety/bmt-js';
 const { makeChunkedFile } = pkg;
 
 import { retryAwaitableAsync } from '../utils/common.js';

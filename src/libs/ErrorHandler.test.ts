@@ -1,8 +1,10 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 const loggerMock = {
-  error: jest.fn(),
+  error: vi.fn(),
 };
 
-jest.mock('./Logger', () => ({
+vi.mock('./Logger', () => ({
   Logger: {
     getInstance: () => loggerMock,
   },
@@ -12,7 +14,7 @@ import { ErrorHandler } from './ErrorHandler.js';
 
 describe('ErrorHandler', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('should log an error with message and stack when passed an Error object', () => {

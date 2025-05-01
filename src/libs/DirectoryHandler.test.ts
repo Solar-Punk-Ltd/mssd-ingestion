@@ -1,46 +1,58 @@
-import fs from 'fs';
-import path from 'path';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DirectoryHandler } from './DirectoryHandler.js';
+vi.mock('fs', async () => {
+  const fsMock = {
+    rmSync: vi.fn(),
+    existsSync: vi.fn(() => true),
+  };
 
-jest.mock('fs', () => ({
-  rmSync: jest.fn(),
-  existsSync: jest.fn(() => true),
-}));
-jest.mock('./Logger', () => ({
+  return {
+    ...fsMock,
+    default: fsMock,
+  };
+});
+
+vi.mock('./Logger', () => ({
   Logger: {
     getInstance: () => ({
-      log: jest.fn(),
-      error: jest.fn(),
-      info: jest.fn(),
+      log: vi.fn(),
+      error: vi.fn(),
+      info: vi.fn(),
     }),
   },
 }));
-jest.mock('@ethersphere/bee-js', () => ({
-  Bee: jest.fn(() => ({
-    uploadData: jest.fn().mockResolvedValue({ reference: { toHex: () => 'mockRef' } }),
-    gsocSend: jest.fn().mockResolvedValue({ reference: { toHex: () => 'gsocRef' } }),
+
+vi.mock('@ethersphere/bee-js', () => ({
+  Bee: vi.fn(() => ({
+    uploadData: vi.fn().mockResolvedValue({ reference: { toHex: () => 'mockRef' } }),
+    gsocSend: vi.fn().mockResolvedValue({ reference: { toHex: () => 'gsocRef' } }),
   })),
 }));
-jest.mock('../utils/common', () => ({
-  getEnvVariable: jest.fn(
-    (key: string) =>
-      ({
-        SWARM_RPC_URL: 'http://mocked-url',
-        STREAM_KEY: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-        STAMP: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-        GSOC_RESOURCE_ID: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-        GSOC_TOPIC: 'mock-topic',
-      }[key]),
-  ),
-}));
 
-const startMock = jest.fn();
-const closeMock = jest.fn();
-const swarmStreamUploaderMock = jest.fn();
+vi.mock('../utils/common', async () => {
+  return {
+    retryAwaitableAsync: vi.fn(async (fn: () => Promise<any>) => {
+      return await fn();
+    }),
+    getEnvVariable: vi.fn(
+      (key: string) =>
+        ({
+          SWARM_RPC_URL: 'http://mocked-url',
+          STREAM_KEY: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          STAMP: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          GSOC_RESOURCE_ID: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          GSOC_TOPIC: 'mock-topic',
+        }[key]),
+    ),
+  };
+});
 
-jest.mock('./MediaWatcher', () => ({
-  MediaWatcher: jest.fn().mockImplementation((p, cb) => ({
+const startMock = vi.fn();
+const closeMock = vi.fn();
+const swarmStreamUploaderMock = vi.fn();
+
+vi.mock('./MediaWatcher', () => ({
+  MediaWatcher: vi.fn().mockImplementation((p, cb) => ({
     start: () => {
       cb('/mock/path/file.ts');
       startMock();
@@ -49,16 +61,21 @@ jest.mock('./MediaWatcher', () => ({
   })),
 }));
 
-jest.mock('./SwarmStreamUploader', () => ({
-  SwarmStreamUploader: jest.fn().mockImplementation((bee, rpcUrl, resId, topic, key, stamp, path, mediatype) => {
+vi.mock('./SwarmStreamUploader', () => ({
+  SwarmStreamUploader: vi.fn().mockImplementation((bee, rpcUrl, resId, topic, key, stamp, path, mediatype) => {
     swarmStreamUploaderMock(bee, rpcUrl, resId, topic, key, stamp, path, mediatype);
     return {
-      upload: jest.fn(),
-      broadcastStart: jest.fn().mockResolvedValue(undefined),
-      broadcastStop: jest.fn().mockResolvedValue(undefined),
+      upload: vi.fn(),
+      broadcastStart: vi.fn().mockResolvedValue(undefined),
+      broadcastStop: vi.fn().mockResolvedValue(undefined),
     };
   }),
 }));
+
+import fs from 'fs';
+import path from 'path';
+
+import { DirectoryHandler } from './DirectoryHandler.js';
 
 describe('DirectoryHandler', () => {
   const basePath = '/mock';
@@ -66,14 +83,13 @@ describe('DirectoryHandler', () => {
     '/audio/test?exp=1745855645&sign=2db33d7b239b628d08b51d2be7951c373dff7a223a4687e0fef5d82d9f191138';
   const videoStreamPath =
     '/video/test?exp=1745855645&sign=2db33d7b239b628d08b51d2be7951c373dff7a223a4687e0fef5d82d9f191138';
-  const invalidStreamPath = '/invalid/test';
   const audioFullPath = path.join(basePath, audioStreamPath);
   const videoFullPath = path.join(basePath, videoStreamPath);
   let handler: DirectoryHandler;
 
   beforeEach(() => {
     handler = DirectoryHandler.getInstance();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it('should acquire directory successfully', () => {

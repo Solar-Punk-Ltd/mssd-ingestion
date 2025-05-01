@@ -2,12 +2,12 @@ import { execSync } from 'child_process';
 import crypto from 'crypto';
 import NodeMediaServer from 'node-media-server';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 import { getEnvVariable } from '../utils/common.js';
 
 import { DirectoryHandler } from './DirectoryHandler.js';
 import { Logger } from './Logger.js';
-import { fileURLToPath } from 'url';
 
 const logger = Logger.getInstance();
 
