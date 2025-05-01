@@ -8,21 +8,14 @@ import { retryAwaitableAsync } from '../utils/common';
 
 import { ErrorHandler } from './ErrorHandler';
 import { Logger } from './Logger';
+import { ManifestManager } from './ManifestManager';
 import { Queue } from './Queue';
 
-// TODO: Refactor idea, separate the upload logic from the manifest handling logic
 export class SwarmStreamUploader {
-  private readonly liveSwarmManifestName = 'playlist-live.m3u8';
-  private readonly vodSwarmManifestName = 'playlist-vod.m3u8';
-  private readonly origiManifestName = 'index.m3u8';
-  private readonly segmentBufferSize = 10;
-  private mediaSequence = 0;
-
   private segmentQueue = new Queue();
   private manifestQueue = new Queue();
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
-  private segmentBuffer: string[] = [];
 
   private bee: Bee;
   private manifestBeeUrl: string;
@@ -32,9 +25,10 @@ export class SwarmStreamUploader {
   private gsocRawTopic: string;
   private streamPath: string;
   private stamp: string;
-  private index: number = 0;
+  private index = 0;
   private mediatype: string;
-  private hlsOriginalHeaders: string[] = [];
+
+  private manifestManager: ManifestManager;
 
   constructor(
     bee: Bee,
@@ -55,6 +49,8 @@ export class SwarmStreamUploader {
     this.stamp = stamp;
     this.streamPath = streamPath;
     this.mediatype = mediatype;
+
+    this.manifestManager = new ManifestManager(streamPath, this.manifestBeeUrl);
   }
 
   public async broadcastStart() {
@@ -73,15 +69,13 @@ export class SwarmStreamUploader {
     await this.segmentQueue.waitForProcessing();
     await this.manifestQueue.waitForProcessing();
 
-    const validVODManifest = this.checkFinalVODManifest();
-    if (!validVODManifest) {
-      return;
-    }
+    const valid = this.manifestManager.checkFinalVODManifest();
+    if (!valid) return;
 
-    this.closeVODManifest();
+    this.manifestManager.closeVODManifest();
 
     const finalIndex = this.index++;
-    this.uploadManifest(this.vodSwarmManifestName, finalIndex);
+    this.uploadManifest('playlist-vod.m3u8', finalIndex);
 
     const identifier = Identifier.fromString(this.gsocRawTopic);
     const data = {
@@ -89,7 +83,7 @@ export class SwarmStreamUploader {
       topic: this.streamRawTopic,
       state: 'VOD',
       index: finalIndex,
-      duration: this.getTotalDurationFromFile(),
+      duration: this.manifestManager.getTotalDurationFromFile(),
       mediatype: this.mediatype,
     };
 
@@ -97,19 +91,16 @@ export class SwarmStreamUploader {
   }
 
   public upload(segmentPath: string) {
-    if (segmentPath.includes('m3u8')) {
-      return;
-    }
+    if (segmentPath.includes('m3u8')) return;
 
     const data = this.getSegmentData(segmentPath);
-
     if (!data?.ref || !data?.segmentData) {
       this.logger.error(`Failed to upload segment: ${segmentPath}`);
       return;
     }
 
-    const segmentEntry = this.getSegmentEntry(segmentPath, data.ref);
-    this.buildVODManifest(segmentEntry);
+    const segmentEntry = this.manifestManager.getSegmentEntry(segmentPath, data.ref);
+    this.manifestManager.buildVODManifest(segmentEntry);
 
     this.processNewSegment(segmentPath, data.segmentData);
   }
@@ -124,9 +115,9 @@ export class SwarmStreamUploader {
         const hexRef = result.reference.toHex();
         this.logger.log(`Segment upload result: ${segmentPath}`, hexRef);
 
-        this.addToSegmentBuffer(hexRef);
-        this.buildLiveManifest();
-        this.uploadManifest(this.liveSwarmManifestName, fileIndex);
+        this.manifestManager.addToSegmentBuffer(hexRef);
+        this.manifestManager.buildLiveManifest();
+        this.uploadManifest('playlist-live.m3u8', fileIndex);
       } else {
         this.logger.error(`Failed to upload segment: ${segmentPath}`);
       }
@@ -136,7 +127,6 @@ export class SwarmStreamUploader {
   private uploadManifest(manifestName: string, index = 0) {
     try {
       this.index = index;
-
       const fullPath = path.join(this.streamPath, manifestName);
       const manifestData = fs.readFileSync(fullPath);
 
@@ -172,108 +162,6 @@ export class SwarmStreamUploader {
     }
   }
 
-  private closeVODManifest() {
-    const swarmManifestPath = path.join(this.streamPath, this.vodSwarmManifestName);
-    const close = `#EXT-X-ENDLIST\n`;
-    fs.appendFileSync(swarmManifestPath, close);
-    this.logger.log(`Manifest closed: ${swarmManifestPath}`);
-  }
-
-  private buildVODManifest(segmentEntry: string) {
-    if (this.hlsOriginalHeaders.length === 0) {
-      this.extractHlsHeaders(this.streamPath);
-    }
-
-    const swarmVodManifestPath = path.join(this.streamPath, this.vodSwarmManifestName);
-    if (!fs.existsSync(swarmVodManifestPath)) {
-      const vodManifestHeaders = [...this.hlsOriginalHeaders, '#EXT-X-PLAYLIST-TYPE: VOD', '#EXT-X-MEDIA-SEQUENCE: 0'];
-      fs.writeFileSync(swarmVodManifestPath, vodManifestHeaders.join('\n') + '\n');
-    }
-
-    fs.appendFileSync(swarmVodManifestPath, segmentEntry + '\n');
-
-    this.logger.log(`VOD Manifest updated: ${swarmVodManifestPath}`);
-  }
-
-  private buildLiveManifest() {
-    const swarmLiveManifestPath = path.join(this.streamPath, this.liveSwarmManifestName);
-    const liveManifestHeaders = [...this.hlsOriginalHeaders, `#EXT-X-MEDIA-SEQUENCE: ${this.mediaSequence}`];
-
-    const liveManifestContent = liveManifestHeaders.join('\n') + '\n' + this.segmentBuffer.join('\n') + '\n';
-    fs.writeFileSync(swarmLiveManifestPath, liveManifestContent);
-
-    this.logger.log(`Live Manifest updated: ${swarmLiveManifestPath}`);
-  }
-
-  private buildSegmentEntry(duration: string, ref: string): string {
-    return `#EXTINF:${duration},\n${this.manifestBeeUrl}/${ref}`;
-  }
-
-  private extractHlsHeaders(streamPath: string) {
-    const origiManifestPath = path.join(streamPath, this.origiManifestName);
-    const manifest = fs.readFileSync(origiManifestPath, 'utf-8');
-    const lines = manifest.split('\n');
-    const headerLines: string[] = [];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      if (trimmed.startsWith('#EXTINF')) break;
-      if (trimmed.startsWith('#EXT-X-MEDIA-SEQUENCE')) continue;
-
-      headerLines.push(trimmed);
-    }
-
-    this.hlsOriginalHeaders = headerLines;
-  }
-
-  private getSegmentEntry(segmentPath: string, ref: string) {
-    const filename = path.basename(segmentPath);
-    const origiManifestPath = path.join(this.streamPath, this.origiManifestName);
-
-    const extInf = this.getExtInfFromFile(origiManifestPath, filename);
-    if (!extInf) {
-      throw new Error(`Failed to get EXTINF for ${filename}`);
-    }
-
-    const segmentEntry = this.buildSegmentEntry(extInf, ref);
-    return segmentEntry;
-  }
-
-  private getExtInfFromFile(path: string, segmentName: string): string | null {
-    const manifest = fs.readFileSync(path, 'utf-8');
-    const lines = manifest.trim().split('\n');
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-
-      if (line === segmentName && i > 0) {
-        const prevLine = lines[i - 1].trim();
-        const match = prevLine.match(/^#EXTINF:([\d.]+),?/);
-        if (match) {
-          return match[1];
-        }
-      }
-    }
-
-    return null;
-  }
-
-  private getTotalDurationFromFile() {
-    const swarmManifestPath = path.join(this.streamPath, this.vodSwarmManifestName);
-    const manifest = fs.readFileSync(swarmManifestPath, 'utf-8');
-
-    const totalDuration = manifest
-      .split('\n')
-      .filter(line => line.startsWith('#EXTINF'))
-      .reduce((sum, line) => {
-        const duration = parseFloat(line.split(':')[1]);
-        return sum + (isNaN(duration) ? 0 : duration);
-      }, 0);
-
-    return totalDuration;
-  }
-
   private getSegmentData(segmentPath: string) {
     try {
       const segmentData = fs.readFileSync(segmentPath);
@@ -283,57 +171,5 @@ export class SwarmStreamUploader {
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadSegment');
     }
-  }
-
-  private addToSegmentBuffer(ref: string) {
-    const vodManifestPath = path.join(this.streamPath, this.vodSwarmManifestName);
-    const segmentName = `${this.manifestBeeUrl}/${ref}`;
-    const extInf = this.getExtInfFromFile(vodManifestPath, segmentName);
-
-    if (!extInf) {
-      throw new Error(`Failed to get EXTINF for ${segmentName}`);
-    }
-
-    const segmentEntry = this.buildSegmentEntry(extInf, ref);
-
-    if (this.segmentBuffer.length === this.segmentBufferSize) {
-      this.segmentBuffer.shift();
-      this.mediaSequence++;
-    }
-    this.segmentBuffer.push(segmentEntry);
-  }
-
-  private checkFinalVODManifest(): boolean {
-    const vodManifestPath = path.join(this.streamPath, this.vodSwarmManifestName);
-    if (!fs.existsSync(vodManifestPath)) {
-      return false;
-    }
-
-    const content = fs.readFileSync(vodManifestPath, 'utf-8').trim();
-    const lines = content.split('\n');
-
-    // meta check?
-    let hasExtinf = false;
-    let hasSegmentUri = false;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-
-      if (line.startsWith('#EXTINF:')) {
-        hasExtinf = true;
-
-        const nextLine = lines[i + 1]?.trim();
-        if (nextLine && !nextLine.startsWith('#')) {
-          hasSegmentUri = true;
-        }
-      }
-    }
-
-    if (!hasExtinf || !hasSegmentUri) {
-      this.logger.warn('Invalid VOD manifest: missing required tags or segments.');
-      return false;
-    }
-
-    return true;
   }
 }
