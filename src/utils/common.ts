@@ -19,8 +19,8 @@ export function sleep(delay: number) {
 
 export async function retryAwaitableAsync<T>(
   fn: () => Promise<T>,
-  retries: number = 3,
-  delay: number = 250,
+  retries: number = 10,
+  delay: number = 350,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     fn()

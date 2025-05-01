@@ -12,7 +12,9 @@ import { Logger } from './Logger.js';
 const logger = Logger.getInstance();
 
 function resolveFFmpegPath(providedPath?: string) {
-  if (providedPath) return providedPath;
+  if (providedPath) {
+    return providedPath;
+  }
 
   try {
     const defaultPath = execSync('which ffmpeg').toString().trim();

@@ -106,7 +106,9 @@ export class DirectoryHandler {
   private async deleteDirectorySafe(dirPath: string): Promise<void> {
     return retryAwaitableAsync(
       async () => {
-        if (!fs.existsSync(dirPath)) return;
+        if (!fs.existsSync(dirPath)) {
+          return;
+        }
         fs.rmSync(dirPath, { recursive: true, force: true });
         this.logger.info(`Successfully deleted: ${dirPath}`);
       },

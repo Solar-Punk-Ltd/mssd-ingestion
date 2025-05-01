@@ -27,6 +27,8 @@ module.exports = {
         caughtErrorsIgnorePattern: '^_',
       },
     ],
+    curly: ['error', 'all'],
+    'one-var': ['error', 'never'],
     'simple-import-sort/imports': [
       'error',
       {

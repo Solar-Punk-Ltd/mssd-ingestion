@@ -180,7 +180,7 @@ describe('SwarmStreamUploader', () => {
   it('getTotalDurationFromFile parses all EXTINF durations', () => {
     vi.spyOn(fs, 'readFileSync').mockReturnValue('#EXTINF:3.1,\n#EXTINF:4.9,\n');
     const uploader = createUploader('audio');
-    const total = (uploader as any).getTotalDurationFromFile();
+    const total = (uploader as any).manifestManager.getTotalDurationFromVodManifest();
     expect(total).toBeCloseTo(8.0);
   });
 });
