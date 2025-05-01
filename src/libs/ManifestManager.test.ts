@@ -1,9 +1,18 @@
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 vi.mock('fs');
+
 vi.mock('./Logger', () => ({
   Logger: { getInstance: () => ({ log: vi.fn() }) },
 }));
+
+vi.mock('../utils/common', async () => {
+  const actual = await vi.importActual<any>('../utils/common');
+  return {
+    ...actual,
+    retryAwaitableAsync: vi.fn(fn => fn()),
+  };
+});
 
 import fs from 'fs';
 import path from 'path';
@@ -65,17 +74,17 @@ describe('ManifestManager', () => {
     expect(total).toBeCloseTo(4.0);
   });
 
-  it('getSegmentEntry returns entry with correct duration and URL', () => {
+  it('getSegmentEntrySafe returns correct entry after retries', async () => {
     const origPath = path.join(streamPath, 'index.m3u8');
     (fs.readFileSync as Mock).mockImplementation((p: string) => {
       if (p === origPath) {
-        return '#EXTINF:5.5,\nseg.ts';
+        return '#EXTINF:3.3,\nseg.ts';
       }
       return '';
     });
 
-    const entry = manager.getSegmentEntry('seg.ts', 'REF');
-    expect(entry).toBe('#EXTINF:5.5,\nhttp://bee/REF');
+    const result = await manager.getSegmentEntrySafe('seg.ts', 'REFX');
+    expect(result).toBe('#EXTINF:3.3,\nhttp://bee/REFX');
   });
 
   it('checkFinalVODManifest returns false if file missing or invalid', () => {
@@ -94,8 +103,15 @@ describe('ManifestManager', () => {
     expect(manager.isFinalVODManifestValid()).toBe(true);
   });
 
-  it('getSegmentEntry throws when no EXTINF present', () => {
-    (fs.readFileSync as Mock).mockReturnValue('foo\nbar\n');
-    expect(() => manager.getSegmentEntry('seg.ts', 'REF')).toThrow('Failed to get EXTINF');
+  it('getSegmentEntry throws when no EXTINF present', async () => {
+    const origPath = path.join(streamPath, 'index.m3u8');
+    (fs.readFileSync as Mock).mockImplementation((p: string) => {
+      if (p === origPath) {
+        return '#EXTM3U\n#EXT-X-VERSION:3\nsome-other.ts\nseg.ts';
+      }
+      return '';
+    });
+
+    await expect(manager.getSegmentEntrySafe('seg.ts', 'REF')).rejects.toThrow('Failed to get EXTINF for seg.ts');
   });
 });

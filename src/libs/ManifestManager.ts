@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import { retryAwaitableAsync } from '../utils/common.js';
+
 import { Logger } from './Logger.js';
 
 export class ManifestManager {
@@ -57,7 +59,11 @@ export class ManifestManager {
       .reduce((sum, l) => sum + parseFloat(l.split(':')[1]) || 0, 0);
   }
 
-  public getSegmentEntry(segmentPath: string, ref: string): string {
+  public async getSegmentEntrySafe(segmentPath: string, ref: string): Promise<string> {
+    return retryAwaitableAsync(async () => this.getSegmentEntry(segmentPath, ref), 50, 150);
+  }
+
+  private getSegmentEntry(segmentPath: string, ref: string): string {
     const filename = path.basename(segmentPath);
     const originalPath = this.getOrigiManifestPath();
     const extInf = this.getExtInfFromFile(originalPath, filename);

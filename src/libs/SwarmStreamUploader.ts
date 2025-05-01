@@ -93,7 +93,7 @@ export class SwarmStreamUploader {
     return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
   }
 
-  public upload(segmentPath: string) {
+  public async upload(segmentPath: string) {
     if (segmentPath.includes('m3u8')) {
       return;
     }
@@ -104,7 +104,7 @@ export class SwarmStreamUploader {
       return;
     }
 
-    const segmentEntry = this.manifestManager.getSegmentEntry(segmentPath, data.ref);
+    const segmentEntry = await this.manifestManager.getSegmentEntrySafe(segmentPath, data.ref);
     this.manifestManager.buildVODManifest(segmentEntry);
 
     this.processNewSegment(segmentPath, data.segmentData, data.ref);

@@ -1,17 +1,19 @@
 import { FSWatcher, watch } from 'chokidar';
 import fs from 'fs';
+import PQueue from 'p-queue';
 
 import { ErrorHandler } from './ErrorHandler.js';
 import { Logger } from './Logger.js';
 
 export class MediaWatcher {
   private watcher: FSWatcher | null = null;
+  private uploadQueue = new PQueue({ concurrency: 1 });
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
   private retryCount = 0;
   private maxRetries = 60;
 
-  constructor(private watchPath: string, private onAdd: (filePath: string) => void) {}
+  constructor(private watchPath: string, private onAdd: (filePath: string) => Promise<void>) {}
 
   public start(): void {
     this.waitForFolderAndWatch();
@@ -26,7 +28,7 @@ export class MediaWatcher {
       });
 
       this.watcher
-        .on('add', this.onAdd)
+        .on('add', path => this.uploadQueue.add(() => this.onAdd(path)))
         .on('error', error => this.errorHandler.handleError(error, 'MediaWatcher.watchError'));
     } else if (this.retryCount < this.maxRetries) {
       this.logger.log(`[MediaWatcher] Directory not found: ${this.watchPath}, retrying in 1s...`);

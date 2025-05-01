@@ -9,6 +9,28 @@ const mockOn = vi.fn().mockReturnThis();
 const mockClose = vi.fn();
 const mockWatcher = { on: mockOn, close: mockClose };
 
+const mockAdd = vi.fn(fn => fn());
+
+vi.mock('p-queue', async () => {
+  const actual = await vi.importActual<typeof import('p-queue')>('p-queue');
+
+  class MockPQueue extends actual.default {
+    add = mockAdd;
+  }
+
+  return {
+    default: MockPQueue,
+  };
+});
+
+vi.mock('../utils/common', async () => {
+  const actual = await vi.importActual<any>('../utils/common');
+  return {
+    ...actual,
+    retryAwaitableAsync: vi.fn(fn => fn()),
+  };
+});
+
 vi.mock('chokidar', () => ({
   watch: vi.fn(() => mockWatcher),
 }));
@@ -35,7 +57,7 @@ describe('MediaWatcher', () => {
     vi.clearAllMocks();
   });
 
-  it('should start watching immediately if folder exists', () => {
+  it('should start watching immediately if folder exists', async () => {
     (fs.existsSync as Mock).mockReturnValue(true);
 
     const watcher = new MediaWatcher(watchPath, onAddMock);
@@ -43,11 +65,15 @@ describe('MediaWatcher', () => {
 
     expect(fs.existsSync).toHaveBeenCalledWith(watchPath);
     expect(loggerMock.log).toHaveBeenCalledWith(`[MediaWatcher] Watching started on: ${watchPath}`);
-    expect(mockOn).toHaveBeenCalledWith('add', onAddMock);
+    expect(mockOn).toHaveBeenCalledWith('add', expect.any(Function));
     expect(mockOn).toHaveBeenCalledWith('error', expect.any(Function));
+
+    const addHandler = mockOn.mock.calls.find(([event]) => event === 'add')?.[1];
+    await addHandler?.('video');
+    expect(onAddMock).toHaveBeenCalledWith('video');
   });
 
-  it('should retry until folder exists, then start watching', () => {
+  it('should retry until folder exists, then start watching', async () => {
     (fs.existsSync as Mock).mockReturnValueOnce(false).mockReturnValueOnce(false).mockReturnValueOnce(true); // found on 3rd try
 
     const watcher = new MediaWatcher(watchPath, onAddMock);
@@ -63,7 +89,13 @@ describe('MediaWatcher', () => {
     expect(fs.existsSync).toHaveBeenCalledTimes(3);
 
     expect(loggerMock.log).toHaveBeenCalledWith(`[MediaWatcher] Watching started on: ${watchPath}`);
-    expect(mockOn).toHaveBeenCalledWith('add', onAddMock);
+    expect(mockOn).toHaveBeenCalledWith('add', expect.any(Function));
+
+    const addHandler = mockOn.mock.calls.find(([event]) => event === 'add')?.[1];
+    await addHandler?.('retry-video');
+
+    expect(mockAdd).toHaveBeenCalled();
+    expect(onAddMock).toHaveBeenCalledWith('retry-video');
   });
 
   it('should stop retrying after maxRetries and report error', () => {
