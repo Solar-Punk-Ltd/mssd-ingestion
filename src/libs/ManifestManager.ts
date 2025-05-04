@@ -20,6 +20,10 @@ export class ManifestManager {
     return this.liveSwarmManifestName;
   }
 
+  public getVODManifestName(): string {
+    return this.vodSwarmManifestName;
+  }
+
   public buildVODManifest(segmentEntry: string) {
     if (this.hlsOriginalHeaders.length === 0) {
       this.extractHlsHeaders();
@@ -27,7 +31,7 @@ export class ManifestManager {
 
     const p = this.getVODManifestPath();
     if (!fs.existsSync(p)) {
-      const hdrs = [...this.hlsOriginalHeaders, '#EXT-X-PLAYLIST-TYPE: VOD', '#EXT-X-MEDIA-SEQUENCE: 0'];
+      const hdrs = [...this.hlsOriginalHeaders, '#EXT-X-PLAYLIST-TYPE:VOD', '#EXT-X-MEDIA-SEQUENCE:0'];
       fs.writeFileSync(p, hdrs.join('\n') + '\n');
     }
 

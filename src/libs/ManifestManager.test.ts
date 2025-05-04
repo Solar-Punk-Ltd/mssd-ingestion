@@ -38,7 +38,7 @@ describe('ManifestManager', () => {
     const vodPath = path.join(streamPath, 'playlist-vod.m3u8');
     expect(fs.writeFileSync).toHaveBeenCalledWith(
       vodPath,
-      '#EXTM3U\n#EXT-X-PLAYLIST-TYPE: VOD\n#EXT-X-MEDIA-SEQUENCE: 0\n',
+      '#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n',
     );
     expect(fs.appendFileSync).toHaveBeenCalledWith(vodPath, 'ENTRY\n');
   });

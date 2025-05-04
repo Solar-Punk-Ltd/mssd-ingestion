@@ -117,12 +117,12 @@ describe('MediaWatcher', () => {
     expect(fs.existsSync).toHaveBeenCalledTimes(61); // initial + 60 retries
   });
 
-  it('should close the watcher and log', () => {
+  it('should close the watcher and log', async () => {
     (fs.existsSync as Mock).mockReturnValue(true);
     const watcher = new MediaWatcher(watchPath, onAddMock);
     watcher.start();
 
-    watcher.close();
+    await watcher.close();
 
     expect(mockClose).toHaveBeenCalled();
     expect(loggerMock.log).toHaveBeenCalledWith(`Stopped watching: ${watchPath}`);

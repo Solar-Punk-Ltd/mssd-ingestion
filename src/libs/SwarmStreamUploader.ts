@@ -67,6 +67,8 @@ export class SwarmStreamUploader {
   }
 
   public async broadcastStop() {
+    await this.segmentQueue.onIdle();
+
     const valid = this.manifestManager.isFinalVODManifestValid();
     if (!valid) {
       return;
@@ -74,10 +76,9 @@ export class SwarmStreamUploader {
 
     this.manifestManager.closeVODManifest();
 
-    const finalIndex = this.index++;
-    this.uploadManifest(this.manifestManager.getLiveManifestName(), finalIndex);
+    const finalIndex = this.index + 1;
+    this.uploadManifest(this.manifestManager.getVODManifestName(), finalIndex);
 
-    await this.segmentQueue.onIdle();
     await this.manifestQueue.onIdle();
 
     const identifier = Identifier.fromString(this.gsocRawTopic);

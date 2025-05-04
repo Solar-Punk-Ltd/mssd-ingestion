@@ -43,8 +43,9 @@ export class MediaWatcher {
     }
   }
 
-  public close(): void {
+  public async close(): Promise<void> {
     if (this.watcher) {
+      await this.uploadQueue.onIdle();
       this.watcher.close();
       this.logger.log(`Stopped watching: ${this.watchPath}`);
     }
