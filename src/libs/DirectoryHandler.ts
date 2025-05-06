@@ -69,7 +69,11 @@ export class DirectoryHandler {
           fullPath,
           mediatype,
         );
-        const watcher = new MediaWatcher(fullPath, uploader.upload.bind(uploader));
+        const watcher = new MediaWatcher(
+          fullPath,
+          uploader.onSegmentUpdate.bind(uploader),
+          uploader.onManifestUpdate.bind(uploader),
+        );
 
         watcher.start();
         await uploader.broadcastStart();

@@ -65,7 +65,8 @@ vi.mock('./SwarmStreamUploader', () => ({
   SwarmStreamUploader: vi.fn().mockImplementation((bee, rpcUrl, resId, topic, key, stamp, path, mediatype) => {
     swarmStreamUploaderMock(bee, rpcUrl, resId, topic, key, stamp, path, mediatype);
     return {
-      upload: vi.fn(),
+      onSegmentUpdate: vi.fn(),
+      onManifestUpdate: vi.fn(),
       broadcastStart: vi.fn().mockResolvedValue(undefined),
       broadcastStop: vi.fn().mockResolvedValue(undefined),
     };

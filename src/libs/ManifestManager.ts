@@ -1,18 +1,21 @@
 import fs from 'fs';
 import path from 'path';
 
-import { retryAwaitableAsync } from '../utils/common.js';
-
 import { Logger } from './Logger.js';
 
+interface SegmentBufferEntry {
+  origiName: string;
+  ref: string;
+}
+
 export class ManifestManager {
-  constructor(private streamPath: string, private manifestBeeUrl: string, private segmentBufferSize = 10) {}
+  constructor(private streamPath: string, private manifestBeeUrl: string) {}
 
   private liveSwarmManifestName = 'playlist-live.m3u8';
   private vodSwarmManifestName = 'playlist-vod.m3u8';
   private origiManifestName = 'index.m3u8';
-  private mediaSequence = 0;
-  private segmentBuffer: string[] = [];
+  private segmentBuffer: SegmentBufferEntry[] = [];
+  private originalManifest: string = '';
   private hlsOriginalHeaders: string[] = [];
   private logger = Logger.getInstance();
 
@@ -24,7 +27,24 @@ export class ManifestManager {
     return this.vodSwarmManifestName;
   }
 
-  public buildVODManifest(segmentEntry: string) {
+  public getOrigiManifestName(): string {
+    return this.origiManifestName;
+  }
+
+  public setOriginalManifest() {
+    const p = this.getOrigiManifestPath();
+    if (fs.existsSync(p)) {
+      this.originalManifest = fs.readFileSync(p, 'utf-8');
+    }
+  }
+
+  public buildManifests() {
+    const segmentEntry = this.getSegmentEntry();
+    this.buildVODManifest(segmentEntry);
+    this.buildLiveManifest();
+  }
+
+  private buildVODManifest(segmentEntry: string) {
     if (this.hlsOriginalHeaders.length === 0) {
       this.extractHlsHeaders();
     }
@@ -39,18 +59,30 @@ export class ManifestManager {
     this.logger.log(`VOD Manifest updated: ${p}`);
   }
 
-  public buildLiveManifest() {
+  private buildLiveManifest() {
+    const mediaSequence = this.extractMediaSequenceFromManifest(this.originalManifest);
+    if (mediaSequence === null) {
+      throw new Error('Failed to extract media sequence from original manifest');
+    }
+
+    const hdrs = [...this.hlsOriginalHeaders, `#EXT-X-MEDIA-SEQUENCE:${mediaSequence}`];
+    const entries = this.extractSegmentEntriesFromVODManifest(mediaSequence);
+
     const p = this.getLiveManifestPath();
-    const hdrs = [...this.hlsOriginalHeaders, `#EXT-X-MEDIA-SEQUENCE:${this.mediaSequence}`];
-    const content = hdrs.join('\n') + '\n' + this.segmentBuffer.join('\n') + '\n';
+    const content = hdrs.join('\n') + '\n' + entries.join('\n') + '\n';
     fs.writeFileSync(p, content);
+
     this.logger.log(`Live Manifest updated: ${p}`);
   }
 
-  public closeVODManifest() {
-    const p = this.getVODManifestPath();
-    fs.appendFileSync(p, '#EXT-X-ENDLIST\n');
-    this.logger.log(`Manifest closed: ${p}`);
+  public closeManifests() {
+    const vodPath = this.getVODManifestPath();
+    fs.appendFileSync(vodPath, '#EXT-X-ENDLIST\n');
+    this.logger.log(`Manifest closed: ${vodPath}`);
+
+    const livePath = this.getLiveManifestPath();
+    fs.appendFileSync(livePath, '#EXT-X-ENDLIST\n');
+    this.logger.log(`Manifest closed: ${livePath}`);
   }
 
   public getTotalDurationFromVodManifest(): number {
@@ -63,36 +95,25 @@ export class ManifestManager {
       .reduce((sum, l) => sum + parseFloat(l.split(':')[1]) || 0, 0);
   }
 
-  public async getSegmentEntrySafe(segmentPath: string, ref: string): Promise<string> {
-    return retryAwaitableAsync(async () => this.getSegmentEntry(segmentPath, ref), 50, 150);
-  }
-
-  private getSegmentEntry(segmentPath: string, ref: string): string {
-    const filename = path.basename(segmentPath);
-    const originalPath = this.getOrigiManifestPath();
-    const extInf = this.getExtInfFromFile(originalPath, filename);
-
-    if (!extInf) {
-      throw new Error(`Failed to get EXTINF for ${filename}`);
+  private getSegmentEntry(): string {
+    const oldestSegment = this.segmentBuffer.shift();
+    if (!oldestSegment) {
+      throw new Error('No segments in buffer');
     }
 
-    return this.buildSegmentEntry(extInf, ref);
-  }
-
-  public addToSegmentBuffer(ref: string) {
-    const vodManifestPath = this.getVODManifestPath();
-    const segmentName = `${this.manifestBeeUrl}/${ref}`;
-    const extInf = this.getExtInfFromFile(vodManifestPath, segmentName);
+    const segmentName = oldestSegment.origiName;
+    const extInf = this.getExtInfFromManifest(this.originalManifest, segmentName);
 
     if (!extInf) {
       throw new Error(`Failed to get EXTINF for ${segmentName}`);
     }
 
-    if (this.segmentBuffer.length === this.segmentBufferSize) {
-      this.segmentBuffer.shift();
-      this.mediaSequence++;
-    }
-    this.segmentBuffer.push(this.buildSegmentEntry(extInf, ref));
+    return this.buildSegmentEntry(extInf, oldestSegment.ref);
+  }
+
+  public addToSegmentBuffer(segmentPath: string, ref: string) {
+    const origiName = path.basename(segmentPath);
+    this.segmentBuffer.push({ origiName, ref });
   }
 
   public isFinalVODManifestValid(): boolean {
@@ -118,6 +139,11 @@ export class ManifestManager {
     return hasExtinf && hasUri;
   }
 
+  private extractMediaSequenceFromManifest(manifest: string): number | null {
+    const match = manifest.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/m);
+    return match ? parseInt(match[1], 10) : null;
+  }
+
   private extractHlsHeaders() {
     const origiManifestPath = this.getOrigiManifestPath();
     const manifest = fs.readFileSync(origiManifestPath, 'utf-8');
@@ -138,9 +164,8 @@ export class ManifestManager {
     this.hlsOriginalHeaders = headerLines;
   }
 
-  private getExtInfFromFile(p: string, segmentName: string): string | null {
-    const manifest = fs.readFileSync(p, 'utf-8');
-    const lines = manifest.trim().split('\n');
+  private getExtInfFromManifest(manifest: string, segmentName: string): string | null {
+    const lines = manifest.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].trim() === segmentName && i > 0) {
@@ -151,6 +176,29 @@ export class ManifestManager {
       }
     }
     return null;
+  }
+
+  private extractSegmentEntriesFromVODManifest(mediaSequence: number): string[] {
+    const vodManifestPath = this.getVODManifestPath();
+    if (!fs.existsSync(vodManifestPath)) {
+      throw new Error(`VOD manifest not found: ${vodManifestPath}`);
+    }
+
+    const manifest = fs.readFileSync(vodManifestPath, 'utf-8');
+    const lines = manifest.trim().split('\n');
+    const entries: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('#EXTINF')) {
+        const segmentLine = lines[i + 1];
+        if (segmentLine && !segmentLine.startsWith('#')) {
+          entries.push(`${lines[i]}\n${segmentLine}`);
+          i++; // skip the next line (segment URL) since we already added it
+        }
+      }
+    }
+
+    return entries.slice(mediaSequence);
   }
 
   private getOrigiManifestPath(): string {

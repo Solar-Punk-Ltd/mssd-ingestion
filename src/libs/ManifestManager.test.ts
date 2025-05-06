@@ -26,45 +26,67 @@ describe('ManifestManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    manager = new ManifestManager(streamPath, manifestBeeUrl, 2);
+    manager = new ManifestManager(streamPath, manifestBeeUrl);
   });
 
-  it('buildVODManifest writes headers and entry when file does not exist', () => {
-    (fs.existsSync as Mock).mockReturnValue(false);
-    (fs.readFileSync as Mock).mockReturnValue('#EXTM3U\n#EXTINF:3.0,\nsegment.ts');
-
-    manager.buildVODManifest('ENTRY');
-
+  it('buildVODManifest should create new manifest file if not exists and append entry', () => {
+    manager['hlsOriginalHeaders'] = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:6'];
     const vodPath = path.join(streamPath, 'playlist-vod.m3u8');
+    (fs.existsSync as Mock).mockReturnValue(false);
+
+    const segmentEntry = '#EXTINF:3.3,\nseg.ts';
+    manager['getSegmentEntry'] = vi.fn().mockReturnValue(segmentEntry);
+
+    manager['buildVODManifest'](segmentEntry);
+
     expect(fs.writeFileSync).toHaveBeenCalledWith(
       vodPath,
-      '#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n',
+      '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MEDIA-SEQUENCE:0\n',
     );
-    expect(fs.appendFileSync).toHaveBeenCalledWith(vodPath, 'ENTRY\n');
+    expect(fs.appendFileSync).toHaveBeenCalledWith(vodPath, segmentEntry + '\n');
   });
 
-  it('buildVODManifest appends entry when file exists', () => {
-    (fs.existsSync as Mock).mockReturnValue(true);
-    manager.buildVODManifest('E2');
+  it('buildLiveManifest should write live manifest from VOD and media sequence', () => {
+    manager['hlsOriginalHeaders'] = ['#EXTM3U', '#EXT-X-VERSION:3'];
+    manager['originalManifest'] = '#EXT-X-MEDIA-SEQUENCE:5';
 
-    const vodPath = path.join(streamPath, 'playlist-vod.m3u8');
-    expect(fs.writeFileSync).not.toHaveBeenCalled();
-    expect(fs.appendFileSync).toHaveBeenCalledWith(vodPath, 'E2\n');
-  });
-
-  it('buildLiveManifest writes live manifest content', () => {
-    // simulate headers and buffer
-    (fs.readFileSync as Mock).mockReturnValue('#EXTINF:1.0,\nseg.ts');
-    manager.buildLiveManifest();
+    const mediaSeq = 5;
+    manager['extractMediaSequenceFromManifest'] = vi.fn().mockReturnValue(mediaSeq);
+    manager['extractSegmentEntriesFromVODManifest'] = vi.fn().mockReturnValue(['#EXTINF:4.0,', 'seg.ts']);
 
     const livePath = path.join(streamPath, 'playlist-live.m3u8');
-    expect(fs.writeFileSync).toHaveBeenCalledWith(livePath, expect.stringContaining('#EXT-X-MEDIA-SEQUENCE:0'));
+
+    manager['buildLiveManifest']();
+
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      livePath,
+      '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:5\n#EXTINF:4.0,\nseg.ts\n',
+    );
   });
 
-  it('closeVODManifest appends endlist tag', () => {
+  it('buildManifests should call VOD and Live manifest builders', () => {
+    const segmentEntry = '#EXTINF:2.0,\nseg.ts';
+    manager['getSegmentEntry'] = vi.fn().mockReturnValue(segmentEntry);
+    manager['buildVODManifest'] = vi.fn();
+    manager['buildLiveManifest'] = vi.fn();
+
+    manager.buildManifests();
+
+    expect(manager['getSegmentEntry']).toHaveBeenCalled();
+    expect(manager['buildVODManifest']).toHaveBeenCalledWith(segmentEntry);
+    expect(manager['buildLiveManifest']).toHaveBeenCalled();
+  });
+
+  it('closeManifests appends endlist tag to both VOD and live manifests and logs', () => {
     const vodPath = path.join(streamPath, 'playlist-vod.m3u8');
-    manager.closeVODManifest();
+    const livePath = path.join(streamPath, 'playlist-live.m3u8');
+
+    manager.closeManifests();
+
     expect(fs.appendFileSync).toHaveBeenCalledWith(vodPath, '#EXT-X-ENDLIST\n');
+    expect(fs.appendFileSync).toHaveBeenCalledWith(livePath, '#EXT-X-ENDLIST\n');
+    expect(manager['logger'].log).toHaveBeenCalledWith(`Manifest closed: ${vodPath}`);
+    expect(manager['logger'].log).toHaveBeenCalledWith(`Manifest closed: ${livePath}`);
   });
 
   it('getTotalDurationFromFile sums all EXTINF durations', () => {
@@ -74,17 +96,19 @@ describe('ManifestManager', () => {
     expect(total).toBeCloseTo(4.0);
   });
 
-  it('getSegmentEntrySafe returns correct entry after retries', async () => {
-    const origPath = path.join(streamPath, 'index.m3u8');
-    (fs.readFileSync as Mock).mockImplementation((p: string) => {
-      if (p === origPath) {
-        return '#EXTINF:3.3,\nseg.ts';
-      }
-      return '';
-    });
+  it('getSegmentEntry returns correct entry from buffer', () => {
+    (manager as any).originalManifest = '#EXTINF:3.3,\nseg.ts';
+    (manager as any).segmentBuffer.push({ origiName: 'seg.ts', ref: 'REFX' });
 
-    const result = await manager.getSegmentEntrySafe('seg.ts', 'REFX');
-    expect(result).toBe('#EXTINF:3.3,\nhttp://bee/REFX');
+    const entry = (manager as any).getSegmentEntry();
+    expect(entry).toBe('#EXTINF:3.3,\nhttp://bee/REFX');
+  });
+
+  it('getSegmentEntry throws when no EXTINF present', () => {
+    (manager as any).originalManifest = '';
+    (manager as any).segmentBuffer.push({ origiName: 'seg.ts', ref: 'REFX' });
+
+    expect(() => (manager as any).getSegmentEntry()).toThrow('Failed to get EXTINF for seg.ts');
   });
 
   it('checkFinalVODManifest returns false if file missing or invalid', () => {
@@ -101,17 +125,5 @@ describe('ManifestManager', () => {
     const lines = '#EXTINF:1.0,\nuri.ts';
     (fs.readFileSync as Mock).mockReturnValue(lines);
     expect(manager.isFinalVODManifestValid()).toBe(true);
-  });
-
-  it('getSegmentEntry throws when no EXTINF present', async () => {
-    const origPath = path.join(streamPath, 'index.m3u8');
-    (fs.readFileSync as Mock).mockImplementation((p: string) => {
-      if (p === origPath) {
-        return '#EXTM3U\n#EXT-X-VERSION:3\nsome-other.ts\nseg.ts';
-      }
-      return '';
-    });
-
-    await expect(manager.getSegmentEntrySafe('seg.ts', 'REF')).rejects.toThrow('Failed to get EXTINF for seg.ts');
   });
 });

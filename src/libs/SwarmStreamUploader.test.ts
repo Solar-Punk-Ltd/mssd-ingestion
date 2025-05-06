@@ -158,9 +158,9 @@ describe('SwarmStreamUploader', () => {
     );
   });
 
-  it('upload should skip processing manifest files', () => {
+  it('onSegmentUpdate should skip processing manifest files', () => {
     const uploader = createUploader('audio/mpeg');
-    const processSpy = vi.spyOn(uploader as any, 'processNewSegment');
+    const uploadSpy = vi.spyOn(uploader as any, 'uploadSegment');
 
     const manifestPaths = [
       'index.m3u8',
@@ -169,12 +169,25 @@ describe('SwarmStreamUploader', () => {
     ];
 
     manifestPaths.forEach(manifestPath => {
-      uploader.upload(manifestPath);
-      expect(processSpy).not.toHaveBeenCalled();
+      uploader.onSegmentUpdate(manifestPath);
+      expect(uploadSpy).not.toHaveBeenCalled();
       expect(mockBee.uploadData).not.toHaveBeenCalled();
     });
 
     expect(fs.writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it('onManifestUpdate should do nothing if path does not match original manifest', () => {
+    const uploader = createUploader('video');
+    const mockSetOriginalManifest = vi.spyOn(uploader['manifestManager'], 'setOriginalManifest');
+    const mockBuildManifests = vi.spyOn(uploader['manifestManager'], 'buildManifests');
+    const mockUploadManifest = vi.spyOn(uploader as any, 'uploadManifest');
+
+    uploader.onManifestUpdate('/some/other/path.m3u8');
+
+    expect(mockSetOriginalManifest).not.toHaveBeenCalled();
+    expect(mockBuildManifests).not.toHaveBeenCalled();
+    expect(mockUploadManifest).not.toHaveBeenCalled();
   });
 
   it('getTotalDurationFromFile parses all EXTINF durations', () => {

@@ -26,7 +26,7 @@ export class SwarmStreamUploader {
   private gsocRawTopic: string;
   private streamPath: string;
   private stamp: string;
-  private index = 0;
+  private index: number | null = null;
   private mediatype: string;
 
   private manifestManager: ManifestManager;
@@ -74,10 +74,10 @@ export class SwarmStreamUploader {
       return;
     }
 
-    this.manifestManager.closeVODManifest();
+    this.manifestManager.closeManifests();
 
-    const finalIndex = this.index + 1;
-    this.uploadManifest(this.manifestManager.getVODManifestName(), finalIndex);
+    this.uploadManifest(this.manifestManager.getLiveManifestName());
+    this.uploadManifest(this.manifestManager.getVODManifestName());
 
     await this.manifestQueue.onIdle();
 
@@ -86,7 +86,7 @@ export class SwarmStreamUploader {
       owner: this.streamSigner.publicKey().address().toHex(),
       topic: this.streamRawTopic,
       state: 'VOD',
-      index: finalIndex,
+      index: this.index,
       duration: this.manifestManager.getTotalDurationFromVodManifest(),
       mediatype: this.mediatype,
     };
@@ -94,7 +94,7 @@ export class SwarmStreamUploader {
     return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
   }
 
-  public async upload(segmentPath: string) {
+  public onSegmentUpdate(segmentPath: string) {
     if (segmentPath.includes('m3u8')) {
       return;
     }
@@ -105,24 +105,20 @@ export class SwarmStreamUploader {
       return;
     }
 
-    const segmentEntry = await this.manifestManager.getSegmentEntrySafe(segmentPath, data.ref);
-    this.manifestManager.buildVODManifest(segmentEntry);
-
-    this.processNewSegment(segmentPath, data.segmentData, data.ref);
-    this.processLiveManifest(segmentPath);
+    this.uploadSegment(segmentPath, data.segmentData);
+    this.manifestManager.addToSegmentBuffer(segmentPath, data.ref);
   }
 
-  private processLiveManifest(segmentPath: string) {
-    this.manifestManager.buildLiveManifest();
-
-    const filename = path.basename(segmentPath);
-    const fileIndex = parseInt(filename.match(/\d+/)?.[0] || '', 10);
-    this.uploadManifest(this.manifestManager.getLiveManifestName(), fileIndex);
+  public onManifestUpdate(manifestPath: string) {
+    const fileName = path.basename(manifestPath);
+    if (fileName === this.manifestManager.getOrigiManifestName()) {
+      this.manifestManager.setOriginalManifest();
+      this.manifestManager.buildManifests();
+      this.uploadManifest(this.manifestManager.getLiveManifestName());
+    }
   }
 
-  private processNewSegment(segmentPath: string, segmentData: Uint8Array, ref: string) {
-    this.manifestManager.addToSegmentBuffer(ref);
-
+  private uploadSegment(segmentPath: string, segmentData: Uint8Array) {
     this.segmentQueue.add(async () => {
       const result = await this.uploadDataToBee(segmentData);
       if (result) {
@@ -133,14 +129,15 @@ export class SwarmStreamUploader {
     });
   }
 
-  private uploadManifest(manifestName: string, index = 0) {
+  private uploadManifest(manifestName: string) {
     try {
-      this.index = index;
+      this.index = this.index === null ? 0 : this.index + 1;
+
       const fullPath = path.join(this.streamPath, manifestName);
       const manifestData = fs.readFileSync(fullPath);
 
       this.manifestQueue.add(async () => {
-        const result = await this.uploadDataAsSoc(index, manifestData);
+        const result = await this.uploadDataAsSoc(this.index!, manifestData);
         if (result) {
           this.logger.log(`Manifest upload result: ${fullPath}`, result.reference.toHex());
         } else {
