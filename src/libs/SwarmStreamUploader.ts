@@ -61,6 +61,7 @@ export class SwarmStreamUploader {
       topic: this.streamRawTopic,
       state: 'live',
       mediatype: this.mediatype,
+      timestamp: Date.now(),
     };
 
     return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
@@ -87,6 +88,7 @@ export class SwarmStreamUploader {
       index: this.index,
       duration: this.manifestManager.getTotalDurationFromVodManifest(),
       mediatype: this.mediatype,
+      timestamp: Date.now(),
     };
 
     return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
