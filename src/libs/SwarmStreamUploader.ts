@@ -122,6 +122,7 @@ export class SwarmStreamUploader {
     this.segmentQueue.add(async () => {
       const result = await this.uploadDataToBee(segmentData);
       if (result) {
+        fs.rmSync(segmentPath, { force: true });
         this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
       } else {
         this.logger.error(`Failed to upload segment: ${segmentPath}`);

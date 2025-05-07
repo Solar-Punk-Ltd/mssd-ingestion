@@ -87,12 +87,12 @@ export function startRtmpServer(mRootPath: string, providedFFmpegPath: string): 
     trans: {
       ffmpeg: ffmpegPath,
       tasks: [
-        { app: 'video', hls: true, hlsKeep: true, hlsFlags: '[hls_time=5:hls_list_size=10:hls_flags=delete_segments]' },
+        { app: 'video', hls: true, hlsKeep: true, hlsFlags: '[hls_time=5:hls_list_size=10]' },
         {
           app: 'audio',
           hls: true,
           hlsKeep: true,
-          hlsFlags: '[hls_time=5:hls_list_size=10:hls_flags=delete_segments]',
+          hlsFlags: '[hls_time=5:hls_list_size=10]',
           ac: 'aac',
           ab: '128k',
           mp4: false,
