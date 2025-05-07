@@ -46,7 +46,7 @@ export class MediaWatcher {
             if (isReady) {
               this.onAdd(path);
             } else {
-              this.logger.error(`File not ready: ${path}`);
+              this.logger.error(`File not ready on add: ${path}`);
             }
           });
         })
@@ -56,7 +56,7 @@ export class MediaWatcher {
             if (isReady) {
               this.onChange(path);
             } else {
-              this.logger.error(`File not ready: ${path}`);
+              this.logger.error(`File not ready on change: ${path}`);
             }
           });
         })
@@ -79,7 +79,7 @@ export class MediaWatcher {
     {
       stableRounds = 3,
       interval = 200,
-      maxAttempts = 50,
+      maxAttempts = 30,
     }: { stableRounds?: number; interval?: number; maxAttempts?: number } = {},
   ): Promise<boolean> {
     let lastSize = -1;

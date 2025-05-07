@@ -79,14 +79,11 @@ describe('ManifestManager', () => {
 
   it('closeManifests appends endlist tag to both VOD and live manifests and logs', () => {
     const vodPath = path.join(streamPath, 'playlist-vod.m3u8');
-    const livePath = path.join(streamPath, 'playlist-live.m3u8');
 
-    manager.closeManifests();
+    manager.closeVODManifest();
 
     expect(fs.appendFileSync).toHaveBeenCalledWith(vodPath, '#EXT-X-ENDLIST\n');
-    expect(fs.appendFileSync).toHaveBeenCalledWith(livePath, '#EXT-X-ENDLIST\n');
     expect(manager['logger'].log).toHaveBeenCalledWith(`Manifest closed: ${vodPath}`);
-    expect(manager['logger'].log).toHaveBeenCalledWith(`Manifest closed: ${livePath}`);
   });
 
   it('getTotalDurationFromFile sums all EXTINF durations', () => {

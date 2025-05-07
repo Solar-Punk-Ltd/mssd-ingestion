@@ -74,9 +74,7 @@ export class SwarmStreamUploader {
       return;
     }
 
-    this.manifestManager.closeManifests();
-
-    this.uploadManifest(this.manifestManager.getLiveManifestName());
+    this.manifestManager.closeVODManifest();
     this.uploadManifest(this.manifestManager.getVODManifestName());
 
     await this.manifestQueue.onIdle();

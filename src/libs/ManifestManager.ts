@@ -75,14 +75,10 @@ export class ManifestManager {
     this.logger.log(`Live Manifest updated: ${p}`);
   }
 
-  public closeManifests() {
+  public closeVODManifest() {
     const vodPath = this.getVODManifestPath();
     fs.appendFileSync(vodPath, '#EXT-X-ENDLIST\n');
     this.logger.log(`Manifest closed: ${vodPath}`);
-
-    const livePath = this.getLiveManifestPath();
-    fs.appendFileSync(livePath, '#EXT-X-ENDLIST\n');
-    this.logger.log(`Manifest closed: ${livePath}`);
   }
 
   public getTotalDurationFromVodManifest(): number {
