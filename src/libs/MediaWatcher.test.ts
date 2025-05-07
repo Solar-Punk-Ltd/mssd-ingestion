@@ -48,6 +48,7 @@ describe('MediaWatcher', () => {
     (fs.existsSync as Mock).mockReturnValue(true);
 
     const watcher = new MediaWatcher(watchPath, onAddMock, onChangeMock);
+    watcher['waitUntilFileIsReady'] = async () => true;
     watcher.start();
 
     expect(fs.existsSync).toHaveBeenCalledWith(watchPath);
@@ -58,6 +59,7 @@ describe('MediaWatcher', () => {
 
     const addHandler = mockOn.mock.calls.find(([event]) => event === 'add')?.[1];
     await addHandler?.('video');
+    await watcher['queue'].onIdle();
     expect(onAddMock).toHaveBeenCalledWith('video');
 
     const changeHandler = mockOn.mock.calls.find(([event]) => event === 'change')?.[1];
@@ -69,6 +71,7 @@ describe('MediaWatcher', () => {
     (fs.existsSync as Mock).mockReturnValueOnce(false).mockReturnValueOnce(false).mockReturnValueOnce(true); // found on 3rd try
 
     const watcher = new MediaWatcher(watchPath, onAddMock, onChangeMock);
+    watcher['waitUntilFileIsReady'] = async () => true;
     watcher.start();
 
     expect(fs.existsSync).toHaveBeenCalledTimes(1);

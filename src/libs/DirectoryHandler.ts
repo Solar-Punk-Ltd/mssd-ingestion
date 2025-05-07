@@ -92,7 +92,7 @@ export class DirectoryHandler {
     const watcher = DirectoryHandler.watchers.get(fullPath);
 
     if (watcher) {
-      watcher.close();
+      await watcher.close();
       DirectoryHandler.watchers.delete(fullPath);
     }
 

@@ -105,8 +105,8 @@ export class SwarmStreamUploader {
       return;
     }
 
-    this.uploadSegment(segmentPath, data.segmentData);
     this.manifestManager.addToSegmentBuffer(segmentPath, data.ref);
+    this.uploadSegment(segmentPath, data.segmentData);
   }
 
   public onManifestUpdate(manifestPath: string) {

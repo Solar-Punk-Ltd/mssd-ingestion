@@ -1,11 +1,13 @@
 import { FSWatcher, watch } from 'chokidar';
 import fs from 'fs';
+import PQueue from 'p-queue';
 
 import { ErrorHandler } from './ErrorHandler.js';
 import { Logger } from './Logger.js';
 
 export class MediaWatcher {
   private watcher: FSWatcher | null = null;
+  private queue = new PQueue({ concurrency: 1 });
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
   private retryCount = 0;
@@ -21,6 +23,14 @@ export class MediaWatcher {
     this.waitForFolderAndWatch();
   }
 
+  public async close(): Promise<void> {
+    if (this.watcher) {
+      await this.queue.onIdle();
+      this.watcher.close();
+      this.logger.log(`Stopped watching: ${this.watchPath}`);
+    }
+  }
+
   private waitForFolderAndWatch(): void {
     if (fs.existsSync(this.watchPath)) {
       this.logger.log(`[MediaWatcher] Watching started on: ${this.watchPath}`);
@@ -30,8 +40,26 @@ export class MediaWatcher {
       });
 
       this.watcher
-        .on('add', path => this.onAdd(path))
-        .on('change', path => this.onChange(path))
+        .on('add', path => {
+          this.queue.add(async () => {
+            const isReady = await this.waitUntilFileIsReady(path);
+            if (isReady) {
+              this.onAdd(path);
+            } else {
+              this.logger.error(`File not ready: ${path}`);
+            }
+          });
+        })
+        .on('change', path => {
+          this.queue.add(async () => {
+            const isReady = await this.waitUntilFileIsReady(path);
+            if (isReady) {
+              this.onChange(path);
+            } else {
+              this.logger.error(`File not ready: ${path}`);
+            }
+          });
+        })
         .on('error', error => this.errorHandler.handleError(error, 'MediaWatcher.watchError'));
     } else if (this.retryCount < this.maxRetries) {
       this.logger.log(`[MediaWatcher] Directory not found: ${this.watchPath}, retrying in 1s...`);
@@ -46,10 +74,37 @@ export class MediaWatcher {
     }
   }
 
-  public close(): void {
-    if (this.watcher) {
-      this.watcher.close();
-      this.logger.log(`Stopped watching: ${this.watchPath}`);
+  private async waitUntilFileIsReady(
+    filePath: string,
+    {
+      stableRounds = 3,
+      interval = 200,
+      maxAttempts = 30,
+    }: { stableRounds?: number; interval?: number; maxAttempts?: number } = {},
+  ): Promise<boolean> {
+    let lastSize = -1;
+    let stableCount = 0;
+
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const { size } = fs.statSync(filePath);
+
+        if (size === lastSize && size > 0) {
+          stableCount++;
+          if (stableCount >= stableRounds) {
+            return true;
+          }
+        } else {
+          stableCount = 0;
+          lastSize = size;
+        }
+      } catch {
+        this.logger.error(`File readiness check error: ${filePath}`);
+      }
+
+      await new Promise(r => setTimeout(r, interval));
     }
+
+    return false;
   }
 }
