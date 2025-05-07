@@ -79,17 +79,19 @@ export class MediaWatcher {
     {
       stableRounds = 3,
       interval = 200,
-      maxAttempts = 30,
+      maxAttempts = 50,
     }: { stableRounds?: number; interval?: number; maxAttempts?: number } = {},
   ): Promise<boolean> {
     let lastSize = -1;
+    let lastMTime = 0;
     let stableCount = 0;
 
     for (let i = 0; i < maxAttempts; i++) {
       try {
-        const { size } = fs.statSync(filePath);
+        const stats = fs.statSync(filePath);
+        const { size, mtimeMs } = stats;
 
-        if (size === lastSize && size > 0) {
+        if (size === lastSize && mtimeMs === lastMTime && size > 0) {
           stableCount++;
           if (stableCount >= stableRounds) {
             return true;
@@ -97,12 +99,13 @@ export class MediaWatcher {
         } else {
           stableCount = 0;
           lastSize = size;
+          lastMTime = mtimeMs;
         }
-      } catch {
+      } catch (err) {
         this.logger.error(`File readiness check error: ${filePath}`);
       }
 
-      await new Promise(r => setTimeout(r, interval));
+      await new Promise(resolve => setTimeout(resolve, interval));
     }
 
     return false;
