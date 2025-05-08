@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.mock('crypto', async () => {
   const mock = {
@@ -91,6 +91,15 @@ const mockBee = {
 };
 
 describe('SwarmStreamUploader', () => {
+  beforeAll(() => {
+    vi.useFakeTimers();
+    // freeze to 31 Dec 2023
+    vi.setSystemTime(new Date(2023, 11, 31));
+  });
+
+  afterAll(() => {
+    vi.useRealTimers();
+  });
   const streamPath = '/mock/stream';
 
   const createUploader = (mediatype: string) =>
@@ -129,6 +138,18 @@ describe('SwarmStreamUploader', () => {
     );
   });
 
+  it('broadcastStart includes title in payload', async () => {
+    const uploader = createUploader('audio');
+    await uploader.broadcastStart();
+
+    expect(mockBee.gsocSend).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.anything(),
+      expect.any(String),
+      expect.stringContaining('"title":"31/12/2023"'),
+    );
+  });
+
   it('broadcastStop includes mediatype in payload', async () => {
     const uploader = createUploader('video/mp4');
 
@@ -156,6 +177,34 @@ describe('SwarmStreamUploader', () => {
       'mockIdentifier',
       expect.stringContaining('"mediatype":"video/mp4"'),
     );
+  });
+
+  it('broadcastStop includes title in payload', async () => {
+    const uploader = createUploader('video/mp4');
+
+    // stub VOD manifest so broadcastStop runs through
+    vi.spyOn(fs, 'readFileSync').mockImplementation((p: any) => {
+      if (typeof p === 'string' && p.includes('playlist-vod.m3u8')) {
+        return ['#EXTM3U', '#EXTINF:5.000,', 'http://swarm.test/seg1.ts', '#EXT-X-ENDLIST'].join('\n');
+      }
+      return Buffer.from('');
+    });
+    vi.spyOn(fs, 'existsSync').mockImplementation((p: any) => typeof p === 'string' && p.includes('playlist-vod.m3u8'));
+
+    await uploader.broadcastStop();
+
+    expect(mockBee.gsocSend).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.anything(),
+      expect.any(String),
+      expect.stringContaining('"title":"31/12/2023"'),
+    );
+  });
+
+  it('getFormattedDate returns dd/mm/yyyy', () => {
+    const uploader = createUploader('video/mp4');
+    const formatted = (uploader as any).getFormattedDate();
+    expect(formatted).toBe('31/12/2023');
   });
 
   it('onSegmentUpdate should skip processing manifest files', () => {

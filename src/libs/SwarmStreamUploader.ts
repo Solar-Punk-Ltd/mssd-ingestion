@@ -57,6 +57,7 @@ export class SwarmStreamUploader {
   public async broadcastStart() {
     const identifier = Identifier.fromString(this.gsocRawTopic);
     const data = {
+      title: this.getFormattedDate(),
       owner: this.streamSigner.publicKey().address().toHex(),
       topic: this.streamRawTopic,
       state: 'live',
@@ -82,6 +83,7 @@ export class SwarmStreamUploader {
 
     const identifier = Identifier.fromString(this.gsocRawTopic);
     const data = {
+      title: this.getFormattedDate(),
       owner: this.streamSigner.publicKey().address().toHex(),
       topic: this.streamRawTopic,
       state: 'VOD',
@@ -178,5 +180,13 @@ export class SwarmStreamUploader {
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadSegment');
     }
+  }
+
+  private getFormattedDate(): string {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    return `${day}/${month}/${year}`;
   }
 }
