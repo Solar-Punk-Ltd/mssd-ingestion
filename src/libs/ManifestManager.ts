@@ -38,8 +38,13 @@ export class ManifestManager {
     }
   }
 
-  public buildManifests() {
-    const segmentEntry = this.getSegmentEntry();
+  public async buildManifests() {
+    const segmentEntry = await this.getSegmentEntry();
+    if (!segmentEntry) {
+      this.logger.warn('No segment entry to build manifests');
+      return;
+    }
+
     this.buildVODManifest(segmentEntry);
     this.buildLiveManifest();
   }
@@ -91,20 +96,30 @@ export class ManifestManager {
       .reduce((sum, l) => sum + parseFloat(l.split(':')[1]) || 0, 0);
   }
 
-  private getSegmentEntry(): string {
-    const oldestSegment = this.segmentBuffer.shift();
-    if (!oldestSegment) {
-      throw new Error('No segments in buffer');
+  private async getSegmentEntry(retries = 10, delayMs = 250): Promise<string | null> {
+    let attempt = 0;
+
+    while (attempt <= retries) {
+      const oldestSegment = this.segmentBuffer.shift();
+
+      if (oldestSegment) {
+        const segmentName = oldestSegment.origiName;
+        const extInf = this.getExtInfFromManifest(this.originalManifest, segmentName);
+
+        if (!extInf) {
+          throw new Error(`Failed to get EXTINF for ${segmentName}`);
+        }
+
+        return this.buildSegmentEntry(extInf, oldestSegment.ref);
+      }
+
+      attempt++;
+      if (attempt <= retries) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
     }
 
-    const segmentName = oldestSegment.origiName;
-    const extInf = this.getExtInfFromManifest(this.originalManifest, segmentName);
-
-    if (!extInf) {
-      throw new Error(`Failed to get EXTINF for ${segmentName}`);
-    }
-
-    return this.buildSegmentEntry(extInf, oldestSegment.ref);
+    return null;
   }
 
   public addToSegmentBuffer(segmentPath: string, ref: string) {

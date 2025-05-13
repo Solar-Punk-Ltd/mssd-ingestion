@@ -113,11 +113,11 @@ export class SwarmStreamUploader {
     this.uploadSegment(segmentPath, data.segmentData);
   }
 
-  public onManifestUpdate(manifestPath: string) {
+  public async onManifestUpdate(manifestPath: string) {
     const fileName = path.basename(manifestPath);
     if (fileName === this.manifestManager.getOrigiManifestName()) {
       this.manifestManager.setOriginalManifest();
-      this.manifestManager.buildManifests();
+      await this.manifestManager.buildManifests();
       this.uploadManifest(this.manifestManager.getLiveManifestName());
     }
   }

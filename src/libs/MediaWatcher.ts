@@ -16,7 +16,7 @@ export class MediaWatcher {
   constructor(
     private watchPath: string,
     private onAdd: (filePath: string) => void,
-    private onChange: (filePath: string) => void,
+    private onChange: (filePath: string) => Promise<void>,
   ) {}
 
   public start(): void {
@@ -64,7 +64,7 @@ export class MediaWatcher {
 
             const isReady = await this.waitUntilFileIsReady(path);
             if (isReady) {
-              this.onChange(path);
+              await this.onChange(path);
             } else {
               this.logger.error(`File not ready on change: ${path}`);
             }

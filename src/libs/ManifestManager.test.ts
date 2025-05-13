@@ -64,17 +64,18 @@ describe('ManifestManager', () => {
     );
   });
 
-  it('buildManifests should call VOD and Live manifest builders', () => {
+  it('buildManifests should call VOD and Live manifest builders if segmentEntry exists', async () => {
     const segmentEntry = '#EXTINF:2.0,\nseg.ts';
-    manager['getSegmentEntry'] = vi.fn().mockReturnValue(segmentEntry);
-    manager['buildVODManifest'] = vi.fn();
-    manager['buildLiveManifest'] = vi.fn();
 
-    manager.buildManifests();
+    vi.spyOn(manager as any, 'getSegmentEntry').mockResolvedValue(segmentEntry);
+    const buildVODSpy = vi.spyOn(manager as any, 'buildVODManifest').mockImplementation(() => {});
+    const buildLiveSpy = vi.spyOn(manager as any, 'buildLiveManifest').mockImplementation(() => {});
+
+    await manager.buildManifests();
 
     expect(manager['getSegmentEntry']).toHaveBeenCalled();
-    expect(manager['buildVODManifest']).toHaveBeenCalledWith(segmentEntry);
-    expect(manager['buildLiveManifest']).toHaveBeenCalled();
+    expect(buildVODSpy).toHaveBeenCalledWith(segmentEntry);
+    expect(buildLiveSpy).toHaveBeenCalled();
   });
 
   it('closeManifests appends endlist tag to both VOD and live manifests and logs', () => {
@@ -93,19 +94,25 @@ describe('ManifestManager', () => {
     expect(total).toBeCloseTo(4.0);
   });
 
-  it('getSegmentEntry returns correct entry from buffer', () => {
+  it('getSegmentEntry returns correct entry from buffer', async () => {
     (manager as any).originalManifest = '#EXTINF:3.3,\nseg.ts';
-    (manager as any).segmentBuffer.push({ origiName: 'seg.ts', ref: 'REFX' });
+    (manager as any).segmentBuffer = [{ origiName: 'seg.ts', ref: 'REFX' }];
 
-    const entry = (manager as any).getSegmentEntry();
+    vi.spyOn(manager as any, 'getExtInfFromManifest').mockReturnValue('#EXTINF:3.3,');
+    vi.spyOn(manager as any, 'buildSegmentEntry').mockImplementation((extinf, ref) => {
+      return `${extinf}\nhttp://bee/${ref}`;
+    });
+
+    const entry = await (manager as any).getSegmentEntry();
+
     expect(entry).toBe('#EXTINF:3.3,\nhttp://bee/REFX');
   });
 
-  it('getSegmentEntry throws when no EXTINF present', () => {
+  it('getSegmentEntry throws when no EXTINF present', async () => {
     (manager as any).originalManifest = '';
-    (manager as any).segmentBuffer.push({ origiName: 'seg.ts', ref: 'REFX' });
+    (manager as any).segmentBuffer = [{ origiName: 'seg.ts', ref: 'REFX' }];
 
-    expect(() => (manager as any).getSegmentEntry()).toThrow('Failed to get EXTINF for seg.ts');
+    await expect((manager as any).getSegmentEntry()).rejects.toThrow('Failed to get EXTINF for seg.ts');
   });
 
   it('checkFinalVODManifest returns false if file missing or invalid', () => {
