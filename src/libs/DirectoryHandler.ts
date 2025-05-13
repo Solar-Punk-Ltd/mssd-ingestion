@@ -76,7 +76,6 @@ export class DirectoryHandler {
         );
 
         watcher.start();
-        await uploader.broadcastStart();
 
         DirectoryHandler.uploaders.set(fullPath, uploader);
         DirectoryHandler.watchers.set(fullPath, watcher);

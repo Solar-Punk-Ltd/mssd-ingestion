@@ -28,6 +28,8 @@ export class SwarmStreamUploader {
   private stamp: string;
   private index: number | null = null;
   private mediatype: string;
+  private isFirstSegmentReady = false;
+  private isFstManifestReady = false;
 
   private manifestManager: ManifestManager;
 
@@ -125,6 +127,8 @@ export class SwarmStreamUploader {
       const result = await this.uploadDataToBee(segmentData);
       if (result) {
         fs.rmSync(segmentPath, { force: true });
+        this.isFirstSegmentReady = true;
+
         this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
       } else {
         this.logger.error(`Failed to upload segment: ${segmentPath}`);
@@ -141,7 +145,14 @@ export class SwarmStreamUploader {
 
       this.manifestQueue.add(async () => {
         const result = await this.uploadDataAsSoc(this.index!, manifestData);
+
         if (result) {
+          if (this.isFirstSegmentReady && !this.isFstManifestReady) {
+            this.isFstManifestReady = true;
+            this.broadcastStart();
+            this.logger.log('Broadcast has started!');
+          }
+
           this.logger.log(`Manifest upload result: ${fullPath}`, result.reference.toHex());
         } else {
           this.logger.error(`Failed to upload manifest: ${fullPath}`);
@@ -188,5 +199,9 @@ export class SwarmStreamUploader {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const year = now.getFullYear();
     return `${day}/${month}/${year}`;
+  }
+
+  private isBroadcastReady(): boolean {
+    return this.isFirstSegmentReady && this.isFstManifestReady;
   }
 }
