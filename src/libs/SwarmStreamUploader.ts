@@ -149,7 +149,7 @@ export class SwarmStreamUploader {
         if (result) {
           if (this.isFirstSegmentReady && !this.isFstManifestReady) {
             this.isFstManifestReady = true;
-            this.broadcastStart();
+            await this.broadcastStart();
             this.logger.log('Broadcast has started!');
           }
 
