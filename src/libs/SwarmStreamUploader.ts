@@ -109,7 +109,7 @@ export class SwarmStreamUploader {
       return;
     }
 
-    this.manifestManager.addToSegmentBuffer(segmentPath, data.ref);
+    //this.manifestManager.addToSegmentBuffer(segmentPath, data.ref);
     this.uploadSegment(segmentPath, data.segmentData);
   }
 
@@ -126,6 +126,7 @@ export class SwarmStreamUploader {
     this.segmentQueue.add(async () => {
       const result = await this.uploadDataToBee(segmentData);
       if (result) {
+        this.manifestManager.addToSegmentBuffer(segmentPath, result.reference.toHex());
         fs.rmSync(segmentPath, { force: true });
         this.isFirstSegmentReady = true;
 
@@ -175,7 +176,7 @@ export class SwarmStreamUploader {
 
   private async uploadDataToBee(data: Uint8Array) {
     try {
-      return retryAwaitableAsync(() => this.bee.uploadData(this.stamp, data));
+      return retryAwaitableAsync(() => this.bee.uploadData(this.stamp, data, { redundancyLevel: 1 }));
     } catch (error) {
       this.errorHandler.handleError(error, 'SwarmStreamUploader.uploadDataToBee');
       return null;
@@ -199,9 +200,5 @@ export class SwarmStreamUploader {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const year = now.getFullYear();
     return `${day}/${month}/${year}`;
-  }
-
-  private isBroadcastReady(): boolean {
-    return this.isFirstSegmentReady && this.isFstManifestReady;
   }
 }
