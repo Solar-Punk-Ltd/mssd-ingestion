@@ -226,6 +226,20 @@ describe('SwarmStreamUploader', () => {
     expect(fs.writeFileSync).not.toHaveBeenCalled();
   });
 
+  it('onSegmentUpdate should call build manifest', async () => {
+    const uploader = createUploader('audio/mpeg');
+    const mockBuildManifests = vi.spyOn(uploader['manifestManager'], 'buildManifests');
+    vi.spyOn(uploader as any, 'getSegmentData').mockReturnValue({ segmentData: 'mockData', ref: 'mockRef' });
+    vi.spyOn(uploader['manifestManager'] as any, 'getSegmentEntry').mockResolvedValue('#EXTINF:3.3,\nseg.ts');
+    vi.spyOn(uploader['manifestManager'] as any, 'buildVODManifest').mockImplementation(() => {});
+    vi.spyOn(uploader['manifestManager'] as any, 'buildLiveManifest').mockImplementation(() => {});
+
+    uploader.onSegmentUpdate('index2.ts');
+    await uploader['segmentQueue'].onIdle();
+
+    expect(mockBuildManifests).toHaveBeenCalled();
+  });
+
   it('onManifestUpdate should do nothing if path does not match original manifest', () => {
     const uploader = createUploader('video');
     const mockSetOriginalManifest = vi.spyOn(uploader['manifestManager'], 'setOriginalManifest');
