@@ -1,218 +1,278 @@
 # mssd-ingestion Server
 
+A robust RTMP ingestion server designed for generating HLS (HTTP Live Streaming) streams, with integrated support for
+uploading content to the Swarm decentralized storage network and broadcasting stream status via GSOC.
+
 ## Table of Contents
 
-1. [Features](#features)
-2. [Usage](#usage)
-3. [Pre-requisites](#pre-requisites)
-4. [Installation](#installation)
-5. [Build the Project](#build-the-project)
-6. [Generate HMAC Key](#generate-hmac-key)
-7. [Start the Server](#start-the-server)
-8. [Send Test Data to the Server](#send-test-data-to-the-server)
-9. [HLS File Generation](#hls-file-generation)
-10. [Test HLS Files with VLC](#test-hls-files-with-vlc)
-11. [Example Workflow](#example-workflow)
-12. [Notes](#notes)
-13. [Contributing](#contributing)
+1. [Overview](#overview)
+2. [Features](#features)
+3. [Architectural Overview](#architectural-overview)
+4. [Prerequisites](#prerequisites)
+5. [Installation](#installation)
+6. [Building the Project](#building-the-project)
+7. [Configuration](#configuration)
 
-The `RTMPServer` class provides functionality to handle Real-Time Messaging Protocol (RTMP) connections. This class
-manages the server-side operations required to establish and maintain RTMP connections, process incoming streams, and
-generate HLS (HTTP Live Streaming) files.
+   - [HMAC Stream Key Generation](#hmac-stream-key-generation)
+   - [Environment Variables](#environment-variables)
+
+8. [Running the Server](#running-the-server)
+9. [Testing the Setup](#testing-the-setup)
+
+   - [Sending Video Test Streams](#sending-video-test-streams)
+   - [Sending Audio-Only Test Streams](#sending-audio-only-test-streams)
+
+10. [Accessing HLS Streams](#accessing-hls-streams)
+
+    - [Local HLS Playback](#local-hls-playback)
+    - [Swarm HLS Playback](#swarm-hls-playback)
+
+11. [Complete Workflow Example](#complete-workflow-example)
+12. [Important Notes](#important-notes)
+13. [Further Reading & Resources](#further-reading--resources)
+
+## Overview
+
+The `mssd-ingestion` server provides comprehensive functionality to handle Real-Time Messaging Protocol (RTMP)
+connections. It manages server-side operations for establishing and maintaining RTMP streams, processing incoming media,
+generating HLS playlists and segments, and leveraging Swarm for decentralized content distribution and discovery.
+
+This project acts as a streaming ingestion hub, enabling content creators to stream via RTMP (e.g., using OBS Studio),
+have their streams automatically converted to HLS, and then distributed via Swarm.
 
 ## Features
 
-- RTMP Ingestion from OBS or any RTMP client.
-- HLS (.m3u8 playlist + .ts segments) generation.
-- Uploading generated HLS segments and manifests to Swarm.
-- GSOC (Single Owner Chunk) support.
-- Configurable environment for Swarm writer node, segment base URL, SOC parameters.
-- HMAC-based RTMP stream key authentication.
+- **RTMP Ingestion**: Accepts RTMP streams from clients like OBS Studio or other compatible software.
+- **HLS Generation**: Automatically converts incoming RTMP streams into HLS format ( `.m3u8` playlists and `.ts`
+  segments).
+- **Swarm Integration**: Uploads generated HLS segments and manifests to the Swarm network.
+- **Dynamic Manifests**: Creates and manages both live and VOD (Video on Demand) HLS manifests.
+- **GSOC Broadcasting**: Announces stream start and stop events using GSOC for decentralized stream discovery by
+  aggregators or dApps.
+- **Secure Streaming**: Implements HMAC-based authentication for RTMP stream keys.
+- **Video / only Audio**: Support for only audio stream
 
-## Usage
+## Architectural Overview
 
-This project acts as a streaming ingestion server. Streams are sent to this server via OBS (RTMP), HLS segments are
-generated and uploaded to Swarm.
+1.  **Authenticated Ingestion**: The server receives an RTMP stream from a client (e.g., OBS Studio), authenticated
+    using a signed stream key.
+2.  **Stream Transcoding**: The `node-media-server` library is utilized to transform the incoming RTMP stream into an
+    HLS stream.
+3.  **Segment Monitoring & Upload**: A file watcher actively monitors the designated media directory for new HLS
+    segments (`.ts` files). As new segments are generated, they are uploaded to Swarm.
+4.  **Manifest Management**: Concurrently, two types of HLS manifests (`.m3u8` files) are maintained:
+    - **Live Manifest**: Adheres to standard HLS live streaming conventions, updated continuously as new segments become
+      available.
+    - **VOD Manifest**: Conforms to HLS VOD standards, finalized when the stream ends to represent the complete
+      recording.
+5.  **Swarm Manifest Upload**: During live streaming, the live HLS manifest is regularly uploaded to Swarm under the
+    stream's feed. Upon stream termination, the final VOD manifest is uploaded.
+6.  **Stream Discovery via GSOC**: To announce stream status (start/stop), the server sends GSOC updates. These updates
+    can be captured by an aggregator service (e.g.,
+    [swarm-stream-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)), which can then create a
+    protected feed. This feed enables dApps to dynamically display, hide, or react to stream availability.
 
-## Pre-requisites
+## Prerequisites
 
-Ensure the following are installed on your system:
+Ensure the following software is installed and configured on your system:
 
 - [Node.js](https://nodejs.org/)
-- [pnpm](https://pnpm.io/)
-- [FFmpeg](https://ffmpeg.org/)
-- Swarm Node (Bee)
+- [pnpm](https://pnpm.io/) (Package manager)
+- [FFmpeg](https://ffmpeg.org/) (For media processing and HLS generation)
+- A running Swarm Bee Node (for interacting with the Swarm network)
+- **(Optional)** For a demonstration of dApp integration:
+  [swarm-stream-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)
 
 ## Installation
 
-1. Clone the repository:
+1.  Clone the repository:
 
-```bash
-git clone https://github.com/Solar-Punk-Ltd/mssd-ingestion.git
-cd mssd-ingestion
-```
+    ```bash
+    git clone https://github.com/Solar-Punk-Ltd/mssd-ingestion.git
+    cd mssd-ingestion
+    ```
 
-2. Install dependencies:
+2.  Install project dependencies:
 
-```bash
-pnpm install
-```
+    ```bash
+    pnpm install
+    ```
 
-## Build the Project
+## Building the Project
 
-To compile the TypeScript code into JavaScript, run:
+To compile the TypeScript code into JavaScript, execute:
 
 ```bash
 pnpm build
 ```
 
-## Generate HMAC Key
+This will generate the compiled output in the `dist` directory.
 
-To generate a stream key, set the `RTMP_SECRET` environment variable. This key is used to sign the stream key for
-security purposes.
+## Configuration
 
-```bash
-export RTMP_SECRET=your_secret_key
+### HMAC Stream Key Generation
 
-or set in .env
-or provide in during the command execuction
-```
+For secure stream ingestion, the server uses HMAC-based authentication for RTMP stream keys. The `RTMP_SECRET`
+environment variable is crucial for this process.
 
-Then, generate the stream key using the following command:
+1.  **Set the `RTMP_SECRET`**: This secret key is used to sign and verify stream keys. It can be set as an environment
+    variable, defined in a `.env` file, or provided directly during command execution.
 
-```bash
-(RTMP_SECRET=test) npm run generate-stream-key -- -s test -e 60
-```
+    ```bash
+    export RTMP_SECRET=your_super_secret_key
+    ```
 
-Output:
+    Alternatively, include `RTMP_SECRET=your_super_secret_key` in your `.env` file.
 
-```bash
-[time] [LOG] - OBS Stream Key: test?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
-[time] [LOG] - Full RTMP URL example: rtmp://localhost/video/test?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
-```
+2.  **Generate the Stream Key**: Use the provided npm script. The `-s` flag specifies the stream name, and `-e` defines
+    the expiration duration in minutes.
 
-The generated stream key is a combination of the stream name, an expiration time, and an HMAC signature for security.
-The `exp` parameter indicates the expiration time in seconds since the Unix epoch, and the `sign` parameter is the HMAC
-signature.
+    ```bash
+    (RTMP_SECRET=test_secret) npm run generate-stream-key -- -s my_stream_name -e 60
+    ```
 
-You can add the generated stream key to the Stream Key field in OBS, for example:
+    **Example Output**:
 
-```bash
-test?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
-```
+    ```
+    [time] [LOG] - OBS Stream Key: my_stream_name?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
+    [time] [LOG] - Full RTMP URL example: rtmp://localhost/video/my_stream_name?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
+    ```
 
-![OBS settings](./assets/obs.png)
+    The `exp` parameter indicates the expiration time as a Unix timestamp (seconds), and `sign` is the HMAC signature.
 
-## Start the Server
+3.  **Configure Your Streaming Client (e.g., OBS Studio)**:
 
-Start the RTMP server by specifying the media root directory and, optionally, the FFmpeg binary path. If the FFmpeg
-binary path is not provided, the system's default FFmpeg will be used:
+    - **Server URL**: `rtmp://<your_server_ip_or_domain>/video/`
+    - **Stream Key**: Use the "OBS Stream Key" output (e.g., `my_stream_name?exp=...&sign=...`)
+
+### Environment Variables
+
+Before starting the server, ensure the following environment variables are correctly set (e.g., in a `.env` file based
+on `.env.sample`):
+
+- `BEE_URL`: The API endpoint URL of your Bee Swarm node (e.g., `http://localhost:1633`).
+- `MANIFEST_ACCESS_URL`: The public base URL through which HLS segments will be accessed when referenced in manifests
+  (this might be your Bee node's BZZ endpoint or a gateway).
+- `GSOC_RESOURCE_ID`: The mined GSOC address (resource ID) of the node used for broadcasting stream status.
+- `GSOC_TOPIC`: The topic string associated with the GSOC feed.
+- `STREAM_KEY`: The private key (e.g., Ethereum-style private key) of the stream owner, used for signing GSOC messages.
+- `STAMP`: A valid Swarm postage stamp ID required for uploading data to Swarm.
+- `RTMP_SECRET`: The secret key used for HMAC stream key authentication, as detailed above.
+
+More about how to setup a GSOC node:
+[GSOC Introduction (Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction)
+
+## Running the Server
+
+Start the RTMP server by providing the path to your media root directory (where HLS files will be stored locally) and,
+optionally, the path to your FFmpeg binary. If the FFmpeg path is omitted, the system's default FFmpeg installation will
+be used.
 
 ```bash
 node dist/index.js <MEDIAROOT_PATH> [<FFMPEG_PATH>]
 ```
 
-> When starting the server, please ensure that ENVs are set. Check .env.sample for examples.
-
-```
-WRITER_BEE_URL - Bee Node URL for uploading to Swarm
-
-MANIFEST_SEGMENT_URL - Public URL of segments used in HLS manifest
-
-GSOC_KEY - Private key to sign GSOC uploads
-
-GSOC_TOPIC - Topic name for SOC uploads
-
-STREAM_STAMP - Stamp to upload data to Swarm
-
-RTMP_SECRET - HMAC secret for OBS stream key authentication
-```
-
-### Example
+**Example**:
 
 ```bash
-node dist/index.js ./media /opt/homebrew/bin/ffmpeg
+node dist/index.js ./media_output /usr/local/bin/ffmpeg
 ```
 
-## Send Test Data to the Server
+Make sure all required environment variables are set before running this command.
 
-You can use FFmpeg to generate a test video and stream it to the RTMP server:
+## Testing the Setup
+
+You can use FFmpeg to send test streams to your running `mssd-ingestion` server to verify its functionality.
+
+### Sending Video Test Streams
+
+This command generates a test video pattern with audio and streams it via RTMP:
 
 ```bash
-ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv rtmp://localhost/video/test5?exp=1744219929&sign=c817ddc03ba825b9d0b5b64f6ca77f118d46ebf0bdc7e75743697d9421c5a340
+ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv "rtmp://localhost/video/test_video_stream?exp=<EXP_TIMESTAMP>&sign=<SIGNATURE>"
 ```
 
-This command generates a test video with a resolution of `1280x720` and a frame rate of `30 FPS`, along with a sine wave
-audio track, and streams it to the RTMP server.
+Replace `<EXP_TIMESTAMP>` and `<SIGNATURE>` with values from a freshly generated stream key for `test_video_stream`.
 
-You can use FFmpeg to send audio only (capturing the microphone) to the audio endpoint:
+### Sending Audio-Only Test Streams
+
+This command captures audio from the default microphone (macOS example) and streams it:
 
 ```bash
-ffmpeg -f avfoundation -i ":0" -ac 1 -c:a aac -b:a 128k -f flv "rtmp://localhost:1935/audio/test?exp=1749088934&sign=05f06de6b69481d6d493a7d1f1fdbc44d3346f14f4c26140a70e425898b0af75"
+ffmpeg -f avfoundation -i ":0" -ac 1 -c:a aac -b:a 128k -f flv "rtmp://localhost:1935/audio/test_audio_stream?exp=<EXP_TIMESTAMP>&sign=<SIGNATURE>"
 ```
 
-## HLS File Generation
+Replace `<EXP_TIMESTAMP>` and `<SIGNATURE>` similarly for `test_audio_stream`. Adjust input `-i` for your operating
+system if not macOS.
 
-The `RTMPServer` will generate HLS files (e.g., `.m3u8` playlist and `.ts` segments) in the specified `MEDIAROOT_PATH`.
+Upon successful ingestion, HLS files (`.m3u8` playlist and `.ts` segments) will be generated in the specified
+`<MEDIAROOT_PATH>`.
 
-## Test HLS Files with VLC
+## Accessing HLS Streams
 
-To test the generated HLS files:
+### Local HLS Playback
 
-1. Open VLC Media Player.
-2. Go to **Media > Open File** or **Media > Open Network Stream**.
-3. Point VLC to the `.m3u8` file in the `MEDIAROOT_PATH` directory or use the HTTP URL if the server is running:
+Test the generated HLS stream using a compatible player like VLC Media Player:
 
-```bash
-http://localhost:8000/video/test/index.m3u8
+1.  Open VLC.
+2.  Navigate to **Media \> Open Network Stream...** (or equivalent).
+3.  Enter the local HTTP URL for the stream's manifest:
+    ```
+    http://localhost:8000/video/<your_stream_name>/index.m3u8
+    ```
+    (Assuming the server's HTTP component runs on port 8000 and your stream name is `<your_stream_name>`).
+
+### Swarm HLS Playback
+
+Once segments and manifests are uploaded to Swarm and announced via GSOC, the HLS stream can be accessed through a Swarm
+access point (e.g., your Bee node or a public gateway).
+
+During start all your stream details are logged: `Broadcasting start with data: ${JSON.stringify(data)}` During stop all
+your stream details are logged: `Broadcasting stop with data: ${JSON.stringify(data)}`
+
+The owner of the feed is based on the STREAM_KEY you provided. The topic is randomly generated. You can manually call
+the stream like this:
+
+```
+GET <bee url>/feeds/<owner>/<topic>
 ```
 
-## Example Workflow
+More about feeds:
+[Swarm Feeds Documentation](https://docs.ethswarm.org/docs/develop/tools-and-features/feeds#what-are-feeds)
 
-1. **Start the Server**:
+## Complete Workflow Example
 
-   ```bash
-   node dist/index.js ./media /opt/homebrew/bin/ffmpeg
-   ```
+1.  **Configure**: Set up your `.env` file with all required variables.
+2.  **Generate Stream Key**:
+    ```bash
+    RTMP_SECRET=your_secret npm run generate-stream-key -- -s live_event -e 120
+    ```
+    Copy the output stream key (e.g., `live_event?exp=...&sign=...`).
+3.  **Start the Server**:
+    ```bash
+    node dist/index.js ./media_files /opt/homebrew/bin/ffmpeg
+    ```
+4.  **Configure OBS**: Set Server to `rtmp://localhost/video/` and Stream Key to the generated key. Start streaming from
+    OBS.
+5.  **Verify Local HLS**: Open `http://localhost:8000/video/live_event/index.m3u8` in VLC.
+6.  **Verify Swarm HLS (if aggregator is set up)**: Access the stream via the Swarm URL provided by your aggregator or
+    GSOC feed lookup.
 
-2. **Send Test Stream**:
+## Important Notes
 
-   ```bash
-   ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv rtmp://localhost/video/test
-   ```
+- Ensure the `<MEDIAROOT_PATH>` directory exists and is writable by the user running the server.
+- The FFmpeg binary must be executable and correctly pathed if not in the system's default PATH.
+- Correctly configured Environment Variables are crucial for server operation, especially for Swarm integration and HMAC
+  authentication.
+- Firewall: Ensure port 1935 (default RTMP) and the HTTP port for HLS (default 8000) are open if accessing the server
+  remotely.
+- Swarm Connectivity: Verify that the server can connect to your Bee Swarm node and that the provided postage stamp
+  (`STAMP`) is valid and has sufficient balance.
+- If you want only audio stream use `rtmp://localhost/audio` as an RTMP sender.
 
-3.1 **Play the HLS Stream from local**:
+## Resources
 
-Open the `.m3u8` file in VLC or any HLS-compatible player:
-
-```bash
-http://localhost:8000/video/test/index.m3u8
-```
-
-3.2. **Play the HLS Stream from Swarm**:
-
-Open the `.m3u8` file in VLC or any HLS-compatible player:
-
-```bash
-<your node access point>/<GSOC address of the manfiest>
-
-example:
-http://localhost:1633/soc/ebf8957d31f68f818e5529d77c0d716e9f6b6ac2/f8cbe31d56e6ce17d06ac0ecbcafac0889c78827c6997053dd9e555ad1dae864
-```
-
----
-
-## Notes
-
-- Ensure the `MEDIAROOT_PATH` directory is writable by the server.
-- The FFmpeg binary must be executable and accessible at the specified path.
-- The server monitors the media root's stream path for new segments. When a new segment appears, it uploads the segment
-  to Swarm, then creates a new "live" manifest containing Swarm references. Finally, it uploads this manifest as a GSOC.
-  The SOC access to this chunk allows the play of the stream via HLS.
-
-## Contributing
-
-Contributions are welcome! Please fork the repository and submit a pull request.
-
-If you encounter any issues, feel free to open an issue on the
-[GitHub repository](https://github.com/Solar-Punk-Ltd/mssd-ingestion).
+- [Swarm Feeds Documentation](https://docs.ethswarm.org/docs/develop/tools-and-features/feeds#what-are-feeds)
+- [GSOC Introduction (Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction)
+- [Example Stream Aggregator: Solar-Punk-Ltd/swarm-stream-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)-
+  [Example Stream Client: Solar-Punk-Ltd/swarm-ingestion-stream-react-example](https://github.com/Solar-Punk-Ltd/swarm-ingestion-stream-react-example)

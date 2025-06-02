@@ -9,7 +9,8 @@ import { Logger } from './Logger.js';
 import { MediaWatcher } from './MediaWatcher.js';
 import { SwarmStreamUploader } from './SwarmStreamUploader.js';
 
-const SWARM_RPC_URL = getEnvVariable('SWARM_RPC_URL');
+const BEE_URL = getEnvVariable('BEE_URL');
+const MANIFEST_ACCESS_URL = getEnvVariable('MANIFEST_ACCESS_URL');
 const STREAM_KEY = getEnvVariable('STREAM_KEY');
 const STAMP = getEnvVariable('STAMP');
 const GSOC_RESOURCE_ID = getEnvVariable('GSOC_RESOURCE_ID');
@@ -58,10 +59,10 @@ export class DirectoryHandler {
     this.queue.add(async () => {
       try {
         // TODO: support rpc and owned nodes
-        const bee = new Bee(`${SWARM_RPC_URL}/write`);
+        const bee = new Bee(BEE_URL);
         const uploader = new SwarmStreamUploader(
           bee,
-          SWARM_RPC_URL,
+          MANIFEST_ACCESS_URL,
           GSOC_RESOURCE_ID,
           GSOC_TOPIC,
           STREAM_KEY,

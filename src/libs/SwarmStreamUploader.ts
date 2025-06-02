@@ -35,7 +35,7 @@ export class SwarmStreamUploader {
 
   constructor(
     bee: Bee,
-    swarmRpc: string,
+    manifestBeeUrl: string,
     gsocResId: string,
     gsocTopic: string,
     streamKey: string,
@@ -44,7 +44,7 @@ export class SwarmStreamUploader {
     mediatype: string,
   ) {
     this.bee = bee;
-    this.manifestBeeUrl = `${swarmRpc}/read/bytes`;
+    this.manifestBeeUrl = manifestBeeUrl;
     this.streamSigner = new PrivateKey(streamKey);
     this.streamRawTopic = crypto.randomUUID();
     this.gsocSigner = new PrivateKey(gsocResId);
@@ -66,6 +66,14 @@ export class SwarmStreamUploader {
       mediatype: this.mediatype,
       timestamp: Date.now(),
     };
+
+    this.logger.log(
+      `Broadcasting start with data: ${JSON.stringify({
+        ...data,
+        rawTopic: this.streamRawTopic,
+        topic: Topic.fromString(this.streamRawTopic).toString(),
+      })}`,
+    );
 
     return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
   }
@@ -94,6 +102,14 @@ export class SwarmStreamUploader {
       mediatype: this.mediatype,
       timestamp: Date.now(),
     };
+
+    this.logger.log(
+      `Broadcasting stop with data: ${JSON.stringify({
+        ...data,
+        rawTopic: this.streamRawTopic,
+        topic: Topic.fromString(this.streamRawTopic).toString(),
+      })}`,
+    );
 
     return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
   }
