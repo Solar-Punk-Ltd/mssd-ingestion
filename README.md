@@ -274,5 +274,6 @@ More about feeds:
 
 - [Swarm Feeds Documentation](https://docs.ethswarm.org/docs/develop/tools-and-features/feeds#what-are-feeds)
 - [GSOC Introduction (Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction)
-- [Example Stream Aggregator: Solar-Punk-Ltd/swarm-stream-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)-
+- [Example Stream Aggregator: Solar-Punk-Ltd/swarm-stream-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)
+-
   [Example Stream Client: Solar-Punk-Ltd/swarm-ingestion-stream-react-example](https://github.com/Solar-Punk-Ltd/swarm-ingestion-stream-react-example)
