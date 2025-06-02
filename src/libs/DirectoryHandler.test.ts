@@ -37,7 +37,8 @@ vi.mock('../utils/common', async () => {
     getEnvVariable: vi.fn(
       (key: string) =>
         ({
-          SWARM_RPC_URL: 'http://mocked-url',
+          BEE_URL: 'http://mocked-url',
+          MANIFEST_ACCESS_URL: 'http://mocked-url/manifest',
           STREAM_KEY: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
           STAMP: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
           GSOC_RESOURCE_ID: '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
@@ -115,7 +116,7 @@ describe('DirectoryHandler', () => {
     expect(startMock).toHaveBeenCalled();
     expect(swarmStreamUploaderMock).toHaveBeenCalledWith(
       expect.any(Object), // Bee instance
-      'http://mocked-url',
+      'http://mocked-url/manifest',
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       'mock-topic',
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
@@ -132,7 +133,7 @@ describe('DirectoryHandler', () => {
     expect(startMock).toHaveBeenCalled();
     expect(swarmStreamUploaderMock).toHaveBeenCalledWith(
       expect.any(Object), // Bee instance
-      'http://mocked-url',
+      'http://mocked-url/manifest',
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       'mock-topic',
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
