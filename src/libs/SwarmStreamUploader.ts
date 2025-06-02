@@ -129,13 +129,13 @@ export class SwarmStreamUploader {
     this.uploadSegment(segmentPath, data.segmentData);
   }
 
-  public async onManifestUpdate(manifestPath: string) {
-    const fileName = path.basename(manifestPath);
-    if (fileName === this.manifestManager.getOrigiManifestName()) {
-      this.manifestManager.setOriginalManifest();
-      await this.manifestManager.buildManifests();
-      this.uploadManifest(this.manifestManager.getLiveManifestName());
-    }
+  public async onManifestUpdate(_manifestPath: string) {
+    //const fileName = path.basename(manifestPath);
+    //if (fileName === this.manifestManager.getOrigiManifestName()) {
+    //  this.manifestManager.setOriginalManifest();
+    //  await this.manifestManager.buildManifests();
+    //  this.uploadManifest(this.manifestManager.getLiveManifestName());
+    //}
   }
 
   private uploadSegment(segmentPath: string, segmentData: Uint8Array) {
@@ -145,6 +145,12 @@ export class SwarmStreamUploader {
         this.manifestManager.addToSegmentBuffer(segmentPath, result.reference.toHex());
         fs.rmSync(segmentPath, { force: true });
         this.isFirstSegmentReady = true;
+        // After uploading each segment, we need to update the manifests
+        // to ensure the last segment is not cut off!
+        // See JIRA: https://solar-punk.atlassian.net/browse/SPDV-297
+        this.manifestManager.setOriginalManifest();
+        await this.manifestManager.buildManifests();
+        this.uploadManifest(this.manifestManager.getLiveManifestName());
 
         this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
       } else {
