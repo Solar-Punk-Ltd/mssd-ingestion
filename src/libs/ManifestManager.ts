@@ -214,7 +214,11 @@ export class ManifestManager {
     return entries.slice(mediaSequence);
   }
 
-  public async waitForStreamDrain(dirPath: string, updateManifest: () => Promise<void>): Promise<boolean> {
+  public async waitForStreamDrain(
+    dirPath: string,
+    updateManifest: () => Promise<void>,
+    timeout: number = 5 * 60 * 1000,
+  ): Promise<boolean> {
     let lastIndex = this.getMaxSegmentIndex(dirPath);
     let lastBufferSize = this.segmentBuffer.length;
 
@@ -223,7 +227,6 @@ export class ManifestManager {
     }
 
     const start = Date.now();
-    const timeout = 5 * 60 * 1000; // 5 minutes
 
     this.logger.log(`Waiting for stream drain: .ts max index=${lastIndex}, buffer size=${lastBufferSize}`);
 
