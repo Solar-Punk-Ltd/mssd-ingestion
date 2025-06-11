@@ -232,7 +232,7 @@ describe('SwarmStreamUploader', () => {
     const mockBuildManifests = vi.spyOn(uploader['manifestManager'], 'buildManifests');
     const mockUploadManifest = vi.spyOn(uploader as any, 'uploadManifest');
 
-    uploader.onManifestUpdate('/some/other/path.m3u8');
+    uploader.onManifestUpdate();
 
     expect(mockSetOriginalManifest).not.toHaveBeenCalled();
     expect(mockBuildManifests).not.toHaveBeenCalled();

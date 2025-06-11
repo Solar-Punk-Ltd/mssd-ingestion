@@ -14,7 +14,7 @@ import { ManifestManager } from './ManifestManager.js';
 
 export class SwarmStreamUploader {
   private segmentQueue = new PQueue({ concurrency: 10 });
-  private manifestQueue = new PQueue({ concurrency: 10 });
+  private manifestQueue = new PQueue({ concurrency: 1 });
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
 
@@ -29,7 +29,7 @@ export class SwarmStreamUploader {
   private index: number | null = null;
   private mediatype: string;
   private isFirstSegmentReady = false;
-  private isFstManifestReady = false;
+  private isFirstManifestReady = false;
 
   private manifestManager: ManifestManager;
 
@@ -78,6 +78,10 @@ export class SwarmStreamUploader {
     return retryAwaitableAsync(() => this.bee.gsocSend(this.stamp, this.gsocSigner, identifier, JSON.stringify(data)));
   }
 
+  public async waitForStreamDrain() {
+    return this.manifestManager.waitForStreamDrain(this.streamPath, this.onManifestUpdate.bind(this));
+  }
+
   public async broadcastStop() {
     await this.segmentQueue.onIdle();
 
@@ -88,7 +92,6 @@ export class SwarmStreamUploader {
 
     this.manifestManager.closeVODManifest();
     this.uploadManifest(this.manifestManager.getVODManifestName());
-
     await this.manifestQueue.onIdle();
 
     const identifier = Identifier.fromString(this.gsocRawTopic);
@@ -115,27 +118,19 @@ export class SwarmStreamUploader {
   }
 
   public onSegmentUpdate(segmentPath: string) {
-    if (segmentPath.includes('m3u8')) {
-      return;
-    }
-
     const data = this.getSegmentData(segmentPath);
     if (!data?.ref || !data?.segmentData) {
       this.logger.error(`Failed to upload segment: ${segmentPath}`);
       return;
     }
 
-    //this.manifestManager.addToSegmentBuffer(segmentPath, data.ref);
     this.uploadSegment(segmentPath, data.segmentData);
   }
 
-  public async onManifestUpdate(manifestPath: string) {
-    const fileName = path.basename(manifestPath);
-    if (fileName === this.manifestManager.getOrigiManifestName()) {
-      this.manifestManager.setOriginalManifest();
-      await this.manifestManager.buildManifests();
-      this.uploadManifest(this.manifestManager.getLiveManifestName());
-    }
+  public async onManifestUpdate() {
+    this.manifestManager.setOriginalManifest();
+    await this.manifestManager.buildManifests();
+    this.uploadManifest(this.manifestManager.getLiveManifestName());
   }
 
   private uploadSegment(segmentPath: string, segmentData: Uint8Array) {
@@ -158,16 +153,19 @@ export class SwarmStreamUploader {
       this.index = this.index === null ? 0 : this.index + 1;
 
       const fullPath = path.join(this.streamPath, manifestName);
-      const manifestData = fs.readFileSync(fullPath);
+      if (!fs.existsSync(fullPath)) {
+        this.logger.error(`Manifest file does not exist: ${fullPath}`);
+        return;
+      }
 
       this.manifestQueue.add(async () => {
+        const manifestData = fs.readFileSync(fullPath);
         const result = await this.uploadDataAsSoc(this.index!, manifestData);
 
         if (result) {
-          if (this.isFirstSegmentReady && !this.isFstManifestReady) {
-            this.isFstManifestReady = true;
+          if (this.isFirstSegmentReady && !this.isFirstManifestReady) {
+            this.isFirstManifestReady = true;
             await this.broadcastStart();
-            this.logger.log('Broadcast has started!');
           }
 
           this.logger.log(`Manifest upload result: ${fullPath}`, result.reference.toHex());

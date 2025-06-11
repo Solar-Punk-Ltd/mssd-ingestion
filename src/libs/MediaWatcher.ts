@@ -43,7 +43,6 @@ export class MediaWatcher {
         .on('add', path => {
           this.queue.add(async () => {
             if (path.endsWith('.m3u8') || path.endsWith('.tmp')) {
-              this.logger.warn(`HLS file detected on add: ${path}`);
               return;
             }
 
@@ -57,8 +56,7 @@ export class MediaWatcher {
         })
         .on('change', path => {
           this.queue.add(async () => {
-            if (path.endsWith('.ts') || path.endsWith('.tmp')) {
-              this.logger.warn(`Segment file detected on change: ${path}`);
+            if (path.endsWith('.ts') || path.endsWith('.tmp') || path.includes('playlist')) {
               return;
             }
 
