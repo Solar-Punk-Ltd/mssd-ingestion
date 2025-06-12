@@ -11,6 +11,7 @@ export function getEnvVariable(name: string): string {
   }
   return value;
 }
+
 export function sleep(delay: number) {
   return new Promise(resolve => {
     setTimeout(resolve, delay);
