@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 
+import { sleep } from '../utils/common.js';
+
 import { Logger } from './Logger.js';
 
 interface SegmentBufferEntry {
@@ -210,6 +212,78 @@ export class ManifestManager {
     }
 
     return entries.slice(mediaSequence);
+  }
+
+  public async waitForStreamDrain(
+    dirPath: string,
+    updateManifest: () => Promise<void>,
+    timeout: number = 5 * 60 * 1000,
+  ): Promise<boolean> {
+    let lastIndex = this.getMaxSegmentIndex(dirPath);
+    let lastBufferSize = this.segmentBuffer.length;
+
+    if (lastIndex === -1 && lastBufferSize === 0) {
+      return true;
+    }
+
+    const start = Date.now();
+
+    this.logger.log(`Waiting for stream drain: .ts max index=${lastIndex}, buffer size=${lastBufferSize}`);
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      await sleep(2000);
+
+      const currentIndex = this.getMaxSegmentIndex(dirPath);
+      const currentBufferSize = this.segmentBuffer.length;
+
+      // Check for drain completion
+      if (currentIndex === -1 && currentBufferSize === 0) {
+        this.logger.log(`Stream drain complete: all .ts segments removed and buffer empty.`);
+        return true;
+      }
+
+      // If buffer not empty, call updateManifest
+      if (currentBufferSize > 0) {
+        this.logger.debug(`Buffer not empty (size: ${currentBufferSize}), updating manifest...`);
+        await updateManifest();
+      }
+
+      // Timeout if nothing is progressing
+      if (currentIndex >= lastIndex && currentBufferSize >= lastBufferSize && Date.now() - start > timeout) {
+        this.logger.warn(
+          `Drain stuck at .ts index ${currentIndex}, buffer size ${currentBufferSize} for over 5 minutes, aborting wait.`,
+        );
+        return false;
+      }
+
+      if (currentIndex >= lastIndex && currentIndex !== -1) {
+        this.logger.debug(`Still waiting… .ts segment index not decreasing (still at ${currentIndex})`);
+      }
+
+      if (currentBufferSize >= lastBufferSize && currentBufferSize !== 0) {
+        this.logger.debug(`Still waiting… buffer size not decreasing (still at ${currentBufferSize})`);
+      }
+
+      lastIndex = currentIndex;
+      lastBufferSize = currentBufferSize;
+    }
+  }
+
+  private getMaxSegmentIndex(dir: string): number {
+    let max = -1;
+    const files = fs.readdirSync(dir);
+
+    for (const file of files) {
+      const match = file.match(/^index(\d+)\.ts$/);
+      if (match) {
+        const index = parseInt(match[1], 10);
+        if (index > max) {
+          max = index;
+        }
+      }
+    }
+    return max;
   }
 
   private getOrigiManifestPath(): string {

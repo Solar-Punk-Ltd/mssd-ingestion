@@ -70,6 +70,7 @@ vi.mock('./SwarmStreamUploader', () => ({
       onManifestUpdate: vi.fn(),
       broadcastStart: vi.fn().mockResolvedValue(undefined),
       broadcastStop: vi.fn().mockResolvedValue(undefined),
+      waitForStreamDrain: vi.fn().mockResolvedValue(undefined),
     };
   }),
 }));

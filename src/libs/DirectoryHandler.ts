@@ -58,7 +58,6 @@ export class DirectoryHandler {
 
     this.queue.add(async () => {
       try {
-        // TODO: support rpc and owned nodes
         const bee = new Bee(BEE_URL);
         const uploader = new SwarmStreamUploader(
           bee,
@@ -91,15 +90,13 @@ export class DirectoryHandler {
     const uploader = DirectoryHandler.uploaders.get(fullPath);
     const watcher = DirectoryHandler.watchers.get(fullPath);
 
-    if (watcher) {
-      await watcher.close();
-      DirectoryHandler.watchers.delete(fullPath);
-    }
+    await uploader?.waitForStreamDrain();
 
-    if (uploader) {
-      await uploader.broadcastStop();
-      DirectoryHandler.uploaders.delete(fullPath);
-    }
+    await watcher?.close();
+    DirectoryHandler.watchers.delete(fullPath);
+
+    await uploader?.broadcastStop();
+    DirectoryHandler.uploaders.delete(fullPath);
 
     await this.deleteDirectorySafe(fullPath);
 
@@ -112,6 +109,7 @@ export class DirectoryHandler {
         if (!fs.existsSync(dirPath)) {
           return;
         }
+
         fs.rmSync(dirPath, { recursive: true, force: true });
         this.logger.info(`Successfully deleted: ${dirPath}`);
       },
