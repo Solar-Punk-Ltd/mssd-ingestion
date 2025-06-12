@@ -35,7 +35,8 @@ jobs:
 
       - name: Generate .env file
         run: |
-          echo "SWARM_RPC_URL=${{ secrets.SWARM_RPC_URL }}" >> .env
+          echo "BEE_URL=${{ secrets.BEE_URL }}" >> .env
+          echo "MANIFEST_ACCESS_URL=${{ secrets.MANIFEST_ACCESS_URL }}" >> .env
           echo "GSOC_RESOURCE_ID=${{ secrets.GSOC_RESOURCE_ID }}" >> .env
           echo "GSOC_TOPIC=${{ secrets.GSOC_TOPIC }}" >> .env
           echo "STREAM_KEY=${{ secrets.STREAM_KEY }}" >> .env
