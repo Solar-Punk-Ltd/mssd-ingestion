@@ -7,8 +7,6 @@ import { Logger } from './Logger.js';
 
 const logger = Logger.getInstance();
 
-// --- Config interfaces ---
-
 export interface SrtTask {
   app: 'video' | 'audio';
   hls: boolean;
@@ -37,8 +35,6 @@ export interface SrtServerConfig {
 export interface SrtServerHandle {
   close(): Promise<void>;
 }
-
-// --- Helpers ---
 
 const APP_PORT_OFFSET: Record<string, number> = { video: 0, audio: 1 };
 
@@ -100,8 +96,6 @@ export function buildFFmpegArgs(task: SrtTask, srtConfig: SrtServerConfig['srt']
 
   return args;
 }
-
-// --- Per-task FFmpeg process handler ---
 
 class FFmpegStreamHandler {
   private ffmpeg: ChildProcess | null = null;
@@ -219,8 +213,6 @@ class FFmpegStreamHandler {
     clearTimeout(timeout);
   }
 }
-
-// --- Public API ---
 
 export function stopSrtServer(handle: SrtServerHandle): Promise<void> {
   return handle.close();
