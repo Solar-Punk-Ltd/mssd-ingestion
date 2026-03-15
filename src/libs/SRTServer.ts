@@ -249,8 +249,8 @@ export function startSrtServer(mRootPath: string, providedFFmpegPath: string): S
     trans: {
       ffmpeg: ffmpegPath,
       tasks: [
-        { app: 'video', hls: true, hlsTime: 2, hlsListSize: 10 },
-        { app: 'audio', hls: true, hlsTime: 2, hlsListSize: 10, ac: 'aac', ab: '128k', vcParam: ['-vn'] },
+        { app: 'video', hls: true, hlsTime: 1.5, hlsListSize: 15 },
+        { app: 'audio', hls: true, hlsTime: 1.5, hlsListSize: 15, ac: 'aac', ab: '128k', vcParam: ['-vn'] },
       ],
     },
   };
