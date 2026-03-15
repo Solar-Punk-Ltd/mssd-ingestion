@@ -29,3 +29,5 @@ media
 *.njsproj
 *.sln
 *.sw?
+
+.claude
