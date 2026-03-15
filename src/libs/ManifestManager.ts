@@ -25,8 +25,10 @@ export class ManifestManager {
   private logger = Logger.getInstance();
   private lastProcessedIndex: number = -1;
 
+  private extinfCache = new Map<string, string>();
   private deferralCounts = new Map<string, number>();
   private readonly MAX_DEFERRALS = 10;
+  private lastCachedLine = 0;
 
   public getLiveManifestName(): string {
     return this.liveSwarmManifestName;
@@ -44,6 +46,37 @@ export class ManifestManager {
     const p = this.getOrigiManifestPath();
     if (fs.existsSync(p)) {
       this.originalManifest = fs.readFileSync(p, 'utf-8');
+      this.cacheExtinfEntries(this.originalManifest);
+    }
+  }
+
+  private cacheExtinfEntries(manifest: string) {
+    const lines = manifest.split('\n');
+    let cachedCount = 0;
+
+    const startLine = Math.max(0, this.lastCachedLine - 5);
+
+    for (let i = startLine; i < lines.length; i++) {
+      if (lines[i].startsWith('#EXTINF:')) {
+        const extinfMatch = lines[i].trim().match(/^#EXTINF:([\d.]+),?/);
+        const segmentLine = lines[i + 1]?.trim();
+
+        if (extinfMatch && segmentLine && !segmentLine.startsWith('#')) {
+          const duration = extinfMatch[1];
+          const segmentName = segmentLine;
+
+          if (!this.extinfCache.has(segmentName)) {
+            this.extinfCache.set(segmentName, duration);
+            cachedCount++;
+          }
+        }
+      }
+    }
+
+    this.lastCachedLine = Math.max(0, lines.length - 10);
+
+    if (cachedCount > 0) {
+      this.logger.debug(`Cached ${cachedCount} new EXTINF entries. Total cached: ${this.extinfCache.size}`);
     }
   }
 
@@ -284,7 +317,7 @@ export class ManifestManager {
 
         for (const index of sortedIndices) {
           const segment = this.segmentBuffer.get(index)!;
-          const duration = '5.0';
+          const duration = this.extinfCache.get(segment.origiName) || '5.0';
           const entry = this.buildSegmentEntry(duration, segment.ref);
           this.buildVODManifest(entry);
           this.segmentBuffer.delete(index);
@@ -308,9 +341,11 @@ export class ManifestManager {
   }
 
   public cleanup() {
+    this.extinfCache.clear();
     this.segmentBuffer.clear();
     this.deferralCounts.clear();
     this.lastProcessedIndex = -1;
+    this.lastCachedLine = 0;
     this.originalManifest = '';
     this.hlsOriginalHeaders = [];
     this.logger.log('ManifestManager cleaned up');
@@ -353,12 +388,18 @@ export class ManifestManager {
   }
 
   private getExtInfFromManifest(manifest: string, segmentName: string): string | null {
+    const cached = this.extinfCache.get(segmentName);
+    if (cached) {
+      return cached;
+    }
+
     const lines = manifest.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       if (lines[i].trim() === segmentName && i > 0) {
         const match = lines[i - 1].trim().match(/^#EXTINF:([\d.]+),?/);
         if (match) {
+          this.extinfCache.set(segmentName, match[1]);
           return match[1];
         }
       }

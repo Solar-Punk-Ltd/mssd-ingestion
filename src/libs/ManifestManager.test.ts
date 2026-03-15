@@ -167,10 +167,28 @@ describe('ManifestManager', () => {
     expect(manager.isFinalVODManifestValid()).toBe(true);
   });
 
-  it('cleanup resets all state', () => {
+  it('cacheExtinfEntries populates extinfCache from manifest content', () => {
+    const manifest = '#EXTM3U\n#EXTINF:2.5,\nindex0.ts\n#EXTINF:3.0,\nindex1.ts\n';
+    (manager as any).cacheExtinfEntries(manifest);
+
+    expect((manager as any).extinfCache.get('index0.ts')).toBe('2.5');
+    expect((manager as any).extinfCache.get('index1.ts')).toBe('3.0');
+    expect((manager as any).extinfCache.size).toBe(2);
+  });
+
+  it('getExtInfFromManifest returns cached value without parsing', () => {
+    (manager as any).extinfCache.set('index0.ts', '4.2');
+
+    const result = (manager as any).getExtInfFromManifest('', 'index0.ts');
+    expect(result).toBe('4.2');
+  });
+
+  it('cleanup resets all state including extinfCache', () => {
     (manager as any).segmentBuffer.set(0, { origiName: 'index0.ts', ref: 'REF', index: 0 });
     (manager as any).deferralCounts.set('index0.ts', 3);
+    (manager as any).extinfCache.set('index0.ts', '2.5');
     (manager as any).lastProcessedIndex = 5;
+    (manager as any).lastCachedLine = 10;
     (manager as any).originalManifest = 'something';
     (manager as any).hlsOriginalHeaders = ['#EXTM3U'];
 
@@ -178,7 +196,9 @@ describe('ManifestManager', () => {
 
     expect((manager as any).segmentBuffer.size).toBe(0);
     expect((manager as any).deferralCounts.size).toBe(0);
+    expect((manager as any).extinfCache.size).toBe(0);
     expect((manager as any).lastProcessedIndex).toBe(-1);
+    expect((manager as any).lastCachedLine).toBe(0);
     expect((manager as any).originalManifest).toBe('');
     expect((manager as any).hlsOriginalHeaders.length).toBe(0);
   });
