@@ -23,7 +23,6 @@
     "@fairdatasociety/bmt-js": "^2.1.0",
     "chokidar": "^4.0.3",
     "dotenv": "^16.4.7",
-    "node-media-server": "2.7.4",
     "p-queue": "^8.1.0"
   },
   "devDependencies": {

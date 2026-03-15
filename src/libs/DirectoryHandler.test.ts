@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('fs', async () => {
   const fsMock = {
@@ -18,6 +18,16 @@ vi.mock('./Logger', () => ({
       log: vi.fn(),
       error: vi.fn(),
       info: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+    }),
+  },
+}));
+
+vi.mock('./ErrorHandler', () => ({
+  ErrorHandler: {
+    getInstance: () => ({
+      handleError: vi.fn(),
     }),
   },
 }));
@@ -92,7 +102,12 @@ describe('DirectoryHandler', () => {
 
   beforeEach(() => {
     handler = DirectoryHandler.getInstance();
+    DirectoryHandler.clearUsedStreamIds();
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    DirectoryHandler.stopCleanup();
   });
 
   it('should acquire directory successfully', () => {
@@ -152,5 +167,31 @@ describe('DirectoryHandler', () => {
 
     expect(closeMock).toHaveBeenCalled();
     expect(fs.rmSync).toHaveBeenCalledWith(audioFullPath, { recursive: true, force: true });
+  });
+
+  it('should track used stream IDs', async () => {
+    handler.handleStart(basePath, audioStreamPath);
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    expect(DirectoryHandler.isStreamIdUsed(audioFullPath)).toBe(true);
+    expect(DirectoryHandler.isStreamIdUsed('/nonexistent')).toBe(false);
+  });
+
+  it('should clear used stream IDs', async () => {
+    handler.handleStart(basePath, audioStreamPath);
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    DirectoryHandler.clearUsedStreamIds();
+    expect(DirectoryHandler.isStreamIdUsed(audioFullPath)).toBe(false);
+  });
+
+  it('should throw when reusing a stream path', async () => {
+    handler.handleStart(basePath, audioStreamPath);
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    await handler.handleStop(basePath, audioStreamPath);
+    handler.releaseDirectory(basePath, audioStreamPath);
+
+    expect(() => handler.handleStart(basePath, audioStreamPath)).toThrow('has already been used');
   });
 });

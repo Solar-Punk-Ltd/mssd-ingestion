@@ -58,6 +58,8 @@ vi.mock('./Logger', () => ({
     getInstance: () => ({
       log: vi.fn(),
       error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
     }),
   },
 }));

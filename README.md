@@ -1,6 +1,6 @@
 # mssd-ingestion Server
 
-A robust RTMP ingestion server designed for generating HLS (HTTP Live Streaming) streams, with integrated support for
+A robust SRT ingestion server designed for generating HLS (HTTP Live Streaming) streams, with integrated support for
 uploading content to the Swarm decentralized storage network and broadcasting stream status via GSOC.
 
 ## Table of Contents
@@ -33,31 +33,34 @@ uploading content to the Swarm decentralized storage network and broadcasting st
 
 ## Overview
 
-The `mssd-ingestion` server provides comprehensive functionality to handle Real-Time Messaging Protocol (RTMP)
-connections. It manages server-side operations for establishing and maintaining RTMP streams, processing incoming media,
+The `mssd-ingestion` server provides comprehensive functionality to handle SRT (Secure Reliable Transport)
+connections. It manages server-side operations for establishing and maintaining SRT streams, processing incoming media,
 generating HLS playlists and segments, and leveraging Swarm for decentralized content distribution and discovery.
 
-This project acts as a streaming ingestion hub, enabling content creators to stream via RTMP (e.g., using OBS Studio),
+This project acts as a streaming ingestion hub, enabling content creators to stream via SRT (e.g., using OBS Studio),
 have their streams automatically converted to HLS, and then distributed via Swarm.
 
 ## Features
 
-- **RTMP Ingestion**: Accepts RTMP streams from clients like OBS Studio or other compatible software.
-- **HLS Generation**: Automatically converts incoming RTMP streams into HLS format ( `.m3u8` playlists and `.ts`
+- **SRT Ingestion**: Accepts SRT streams from clients like OBS Studio or other compatible software. Uses FFmpeg in
+  listener mode with two pre-started processes: video (port 9000) and audio (port 9001).
+- **HLS Generation**: Automatically converts incoming SRT streams into HLS format (`.m3u8` playlists and `.ts`
   segments).
 - **Swarm Integration**: Uploads generated HLS segments and manifests to the Swarm network.
 - **Dynamic Manifests**: Creates and manages both live and VOD (Video on Demand) HLS manifests.
 - **GSOC Broadcasting**: Announces stream start and stop events using GSOC for decentralized stream discovery by
   aggregators or dApps.
-- **Secure Streaming**: Implements HMAC-based authentication for RTMP stream keys.
-- **Video / only Audio**: Support for only audio stream
+- **Secure Streaming**: Implements HMAC-based authentication for stream keys, with optional SRT AES encryption via
+  passphrase.
+- **Video / Audio**: Separate SRT ports for video and audio streams.
+- **Auto-Restart**: FFmpeg processes automatically restart after a stream ends, ready for the next connection.
 
 ## Architectural Overview
 
-1.  **Authenticated Ingestion**: The server receives an RTMP stream from a client (e.g., OBS Studio), authenticated
-    using a signed stream key.
-2.  **Stream Transcoding**: The `node-media-server` library is utilized to transform the incoming RTMP stream into an
-    HLS stream.
+1.  **Authenticated Ingestion**: The server receives an SRT stream from a client (e.g., OBS Studio), authenticated
+    using a signed stream key passed via the SRT `streamid` parameter.
+2.  **Stream Processing**: FFmpeg in SRT listener mode receives the incoming MPEG-TS stream and converts it to HLS.
+    Two FFmpeg processes run simultaneously: one for video on port 9000 and one for audio on port 9001.
 3.  **Segment Monitoring & Upload**: A file watcher actively monitors the designated media directory for new HLS
     segments (`.ts` files). As new segments are generated, they are uploaded to Swarm.
 4.  **Manifest Management**: Concurrently, two types of HLS manifests (`.m3u8` files) are maintained:
@@ -78,7 +81,7 @@ Ensure the following software is installed and configured on your system:
 
 - [Node.js](https://nodejs.org/)
 - [pnpm](https://pnpm.io/) (Package manager)
-- [FFmpeg](https://ffmpeg.org/) (For media processing and HLS generation)
+- [FFmpeg](https://ffmpeg.org/) (For SRT listening and HLS generation, must be compiled with SRT support)
 - A running Swarm Bee Node (for interacting with the Swarm network)
 - **(Optional)** For a demonstration of dApp integration:
   [swarm-stream-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)
@@ -112,38 +115,45 @@ This will generate the compiled output in the `dist` directory.
 
 ### HMAC Stream Key Generation
 
-For secure stream ingestion, the server uses HMAC-based authentication for RTMP stream keys. The `RTMP_SECRET`
+For secure stream ingestion, the server uses HMAC-based authentication for stream keys. The `STREAM_SECRET`
 environment variable is crucial for this process.
 
-1.  **Set the `RTMP_SECRET`**: This secret key is used to sign and verify stream keys. It can be set as an environment
+1.  **Set the `STREAM_SECRET`**: This secret key is used to sign and verify stream keys. It can be set as an environment
     variable, defined in a `.env` file, or provided directly during command execution.
 
     ```bash
-    export RTMP_SECRET=your_super_secret_key
+    export STREAM_SECRET=your_super_secret_key
     ```
 
-    Alternatively, include `RTMP_SECRET=your_super_secret_key` in your `.env` file.
+    Alternatively, include `STREAM_SECRET=your_super_secret_key` in your `.env` file.
 
 2.  **Generate the Stream Key**: Use the provided npm script. The `-s` flag specifies the stream name, and `-e` defines
     the expiration duration in minutes.
 
     ```bash
-    (RTMP_SECRET=test_secret) npm run generate-stream-key -- -s my_stream_name -e 60
+    STREAM_SECRET=test_secret pnpm run generate-stream-key -- -s my_stream_name -e 60
     ```
 
     **Example Output**:
 
     ```
-    [time] [LOG] - OBS Stream Key: my_stream_name?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
-    [time] [LOG] - Full RTMP URL example: rtmp://localhost/video/my_stream_name?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
+    [time] [LOG] - Stream Key: my_stream_name?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
+    [time] [LOG] - Video SRT URL: srt://localhost:9000?pkt_size=1316&streamid=my_stream_name%3Fexp%3D1744276392%26sign%3D...
+    [time] [LOG] - Audio SRT URL: srt://localhost:9001?pkt_size=1316&streamid=my_stream_name%3Fexp%3D1744276392%26sign%3D...
     ```
 
     The `exp` parameter indicates the expiration time as a Unix timestamp (seconds), and `sign` is the HMAC signature.
 
 3.  **Configure Your Streaming Client (e.g., OBS Studio)**:
 
-    - **Server URL**: `rtmp://<your_server_ip_or_domain>/video/`
-    - **Stream Key**: Use the "OBS Stream Key" output (e.g., `my_stream_name?exp=...&sign=...`)
+    - **Service**: Custom
+    - **Server**: `srt://your_server_ip:9000?pkt_size=1316` (for video)
+    - **Stream Key**: Use the generated stream key as the `streamid` parameter
+
+    For OBS, use the custom output URL format:
+    ```
+    srt://your_server_ip:9000?pkt_size=1316&streamid=my_stream_name%3Fexp%3D...%26sign%3D...
+    ```
 
 ### Environment Variables
 
@@ -157,14 +167,16 @@ on `.env.sample`):
 - `GSOC_TOPIC`: The topic string associated with the GSOC feed.
 - `STREAM_KEY`: The private key (e.g., Ethereum-style private key) of the stream owner, used for signing GSOC messages.
 - `STAMP`: A valid Swarm postage stamp ID required for uploading data to Swarm.
-- `RTMP_SECRET`: The secret key used for HMAC stream key authentication, as detailed above.
+- `STREAM_SECRET`: The secret key used for HMAC stream key authentication, as detailed above.
+- `SRT_PORT`: Base SRT port for video (default: `9000`). Audio uses `SRT_PORT + 1`.
+- `SRT_PASSPHRASE`: (Optional) AES encryption passphrase for SRT connections.
 
 More about how to setup a GSOC node:
 [GSOC Introduction (Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction)
 
 ## Running the Server
 
-Start the RTMP server by providing the path to your media root directory (where HLS files will be stored locally) and,
+Start the SRT server by providing the path to your media root directory (where HLS files will be stored locally) and,
 optionally, the path to your FFmpeg binary. If the FFmpeg path is omitted, the system's default FFmpeg installation will
 be used.
 
@@ -180,30 +192,40 @@ node dist/index.js ./media_output /usr/local/bin/ffmpeg
 
 Make sure all required environment variables are set before running this command.
 
+The server starts two FFmpeg processes in SRT listener mode:
+- **Video**: Listens on `SRT_PORT` (default 9000)
+- **Audio**: Listens on `SRT_PORT + 1` (default 9001)
+
+Each FFmpeg process accepts one SRT connection at a time. When a stream ends, the process automatically restarts and
+is ready for the next connection.
+
 ## Testing the Setup
 
 You can use FFmpeg to send test streams to your running `mssd-ingestion` server to verify its functionality.
 
-### Sending Video Test Streams
-
-This command generates a test video pattern with audio and streams it via RTMP:
+### Running Unit Tests
 
 ```bash
-ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f flv "rtmp://localhost/video/test_video_stream?exp=<EXP_TIMESTAMP>&sign=<SIGNATURE>"
+pnpm test
 ```
 
-Replace `<EXP_TIMESTAMP>` and `<SIGNATURE>` with values from a freshly generated stream key for `test_video_stream`.
+### Sending Video Test Streams
+
+This command generates a test video pattern with audio and streams it via SRT:
+
+```bash
+ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f mpegts "srt://localhost:9000?pkt_size=1316&streamid=test"
+```
 
 ### Sending Audio-Only Test Streams
 
 This command captures audio from the default microphone (macOS example) and streams it:
 
 ```bash
-ffmpeg -f avfoundation -i ":0" -ac 1 -c:a aac -b:a 128k -f flv "rtmp://localhost:1935/audio/test_audio_stream?exp=<EXP_TIMESTAMP>&sign=<SIGNATURE>"
+ffmpeg -f avfoundation -i ":0" -ac 1 -c:a aac -b:a 128k -f mpegts "srt://localhost:9001?pkt_size=1316&streamid=test"
 ```
 
-Replace `<EXP_TIMESTAMP>` and `<SIGNATURE>` similarly for `test_audio_stream`. Adjust input `-i` for your operating
-system if not macOS.
+Adjust input `-i` for your operating system if not macOS.
 
 Upon successful ingestion, HLS files (`.m3u8` playlist and `.ts` segments) will be generated in the specified
 `<MEDIAROOT_PATH>`.
@@ -245,16 +267,17 @@ More about feeds:
 1.  **Configure**: Set up your `.env` file with all required variables.
 2.  **Generate Stream Key**:
     ```bash
-    RTMP_SECRET=your_secret npm run generate-stream-key -- -s live_event -e 120
+    STREAM_SECRET=your_secret pnpm run generate-stream-key -- -s live_event -e 120
     ```
-    Copy the output stream key (e.g., `live_event?exp=...&sign=...`).
+    Copy the output stream key and SRT URLs.
 3.  **Start the Server**:
     ```bash
     node dist/index.js ./media_files /opt/homebrew/bin/ffmpeg
     ```
-4.  **Configure OBS**: Set Server to `rtmp://localhost/video/` and Stream Key to the generated key. Start streaming from
-    OBS.
-5.  **Verify Local HLS**: Open `http://localhost:8000/video/live_event/index.m3u8` in VLC.
+4.  **Stream with OBS or FFmpeg**: Use the generated SRT URL to start streaming.
+    - **Video**: `srt://localhost:9000?pkt_size=1316&streamid=<generated_key>`
+    - **Audio**: `srt://localhost:9001?pkt_size=1316&streamid=<generated_key>`
+5.  **Verify Local HLS**: Open the HLS URL in VLC.
 6.  **Verify Swarm HLS (if aggregator is set up)**: Access the stream via the Swarm URL provided by your aggregator or
     GSOC feed lookup.
 
@@ -262,13 +285,14 @@ More about feeds:
 
 - Ensure the `<MEDIAROOT_PATH>` directory exists and is writable by the user running the server.
 - The FFmpeg binary must be executable and correctly pathed if not in the system's default PATH.
+- FFmpeg must be compiled with SRT support (`--enable-libsrt`).
 - Correctly configured Environment Variables are crucial for server operation, especially for Swarm integration and HMAC
   authentication.
-- Firewall: Ensure port 1935 (default RTMP) and the HTTP port for HLS (default 8000) are open if accessing the server
-  remotely.
+- Firewall: Ensure ports 9000-9001 (default SRT) are open if accessing the server remotely.
 - Swarm Connectivity: Verify that the server can connect to your Bee Swarm node and that the provided postage stamp
   (`STAMP`) is valid and has sufficient balance.
-- If you want only audio stream use `rtmp://localhost/audio` as an RTMP sender.
+- SRT uses MPEG-TS as its container format. When configuring OBS or other streaming software, ensure the output format
+  is set to MPEG-TS.
 
 ## Resources
 
@@ -277,3 +301,5 @@ More about feeds:
 - [Example Stream Aggregator: Solar-Punk-Ltd/swarm-stream-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)
 -
   [Example Stream Client: Solar-Punk-Ltd/swarm-ingestion-stream-react-example](https://github.com/Solar-Punk-Ltd/swarm-ingestion-stream-react-example)
+- [SRT Protocol](https://www.haivision.com/products/srt-secure-reliable-transport/)
+- [FFmpeg SRT Documentation](https://ffmpeg.org/ffmpeg-protocols.html#srt)
