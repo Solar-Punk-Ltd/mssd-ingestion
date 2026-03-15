@@ -13,7 +13,7 @@ import { Logger } from './Logger.js';
 import { ManifestManager } from './ManifestManager.js';
 
 export class SwarmStreamUploader {
-  private segmentQueue = new PQueue({ concurrency: 10 });
+  private segmentQueue = new PQueue({ concurrency: 1 });
   private manifestQueue = new PQueue({ concurrency: 1 });
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
