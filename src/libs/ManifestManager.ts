@@ -8,6 +8,7 @@ import { Logger } from './Logger.js';
 interface SegmentBufferEntry {
   origiName: string;
   ref: string;
+  index: number;
 }
 
 export class ManifestManager {
@@ -16,10 +17,16 @@ export class ManifestManager {
   private liveSwarmManifestName = 'playlist-live.m3u8';
   private vodSwarmManifestName = 'playlist-vod.m3u8';
   private origiManifestName = 'index.m3u8';
-  private segmentBuffer: SegmentBufferEntry[] = [];
+
+  private segmentBuffer = new Map<number, SegmentBufferEntry>();
+
   private originalManifest: string = '';
   private hlsOriginalHeaders: string[] = [];
   private logger = Logger.getInstance();
+  private lastProcessedIndex: number = -1;
+
+  private deferralCounts = new Map<string, number>();
+  private readonly MAX_DEFERRALS = 10;
 
   public getLiveManifestName(): string {
     return this.liveSwarmManifestName;
@@ -67,23 +74,61 @@ export class ManifestManager {
   }
 
   private buildLiveManifest() {
-    const mediaSequence = this.extractMediaSequenceFromManifest(this.originalManifest);
-    if (mediaSequence === null) {
-      throw new Error('Failed to extract media sequence from original manifest');
+    const vodManifestPath = this.getVODManifestPath();
+    if (!fs.existsSync(vodManifestPath)) {
+      this.logger.warn('VOD manifest does not exist yet, skipping live manifest build');
+      return;
+    }
+
+    const manifest = fs.readFileSync(vodManifestPath, 'utf-8');
+    const lines = manifest.trim().split('\n');
+    const entries: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('#EXTINF')) {
+        const segmentLine = lines[i + 1];
+        if (segmentLine && !segmentLine.startsWith('#')) {
+          entries.push(`${lines[i]}\n${segmentLine}`);
+          i++;
+        }
+      }
+    }
+
+    const totalSegments = entries.length;
+
+    if (totalSegments === 0) {
+      this.logger.warn('VOD manifest has no segments yet, skipping live manifest build');
+      return;
+    }
+
+    const targetWindowSize = 10;
+    let mediaSequence = 0;
+    let liveEntries: string[] = [];
+
+    if (totalSegments <= targetWindowSize) {
+      mediaSequence = 0;
+      liveEntries = entries;
+    } else {
+      mediaSequence = totalSegments - targetWindowSize;
+      liveEntries = entries.slice(mediaSequence);
     }
 
     const hdrs = [...this.hlsOriginalHeaders, `#EXT-X-MEDIA-SEQUENCE:${mediaSequence}`];
-    const entries = this.extractSegmentEntriesFromVODManifest(mediaSequence);
-
     const p = this.getLiveManifestPath();
-    const content = hdrs.join('\n') + '\n' + entries.join('\n') + '\n';
+    const content = hdrs.join('\n') + '\n' + liveEntries.join('\n') + '\n';
     fs.writeFileSync(p, content);
 
-    this.logger.log(`Live Manifest updated: ${p}`);
+    this.logger.log(
+      `Live Manifest updated: ${p} (mediaSequence: ${mediaSequence}, segments: ${liveEntries.length}/${totalSegments})`,
+    );
   }
 
   public closeVODManifest() {
     const vodPath = this.getVODManifestPath();
+    if (!fs.existsSync(vodPath)) {
+      this.logger.error('Cannot close VOD manifest - file does not exist');
+      return;
+    }
     fs.appendFileSync(vodPath, '#EXT-X-ENDLIST\n');
     this.logger.log(`Manifest closed: ${vodPath}`);
   }
@@ -95,24 +140,60 @@ export class ManifestManager {
     return manifest
       .split('\n')
       .filter(l => l.startsWith('#EXTINF'))
-      .reduce((sum, l) => sum + parseFloat(l.split(':')[1]) || 0, 0);
+      .reduce((sum, l) => {
+        const duration = parseFloat(l.split(':')[1]?.split(',')[0] || '0');
+        return sum + duration;
+      }, 0);
   }
 
   private async getSegmentEntry(retries = 10, delayMs = 250): Promise<string | null> {
     let attempt = 0;
 
     while (attempt <= retries) {
-      const oldestSegment = this.segmentBuffer.shift();
+      const nextExpectedIndex = this.lastProcessedIndex + 1;
 
-      if (oldestSegment) {
-        const segmentName = oldestSegment.origiName;
+      const segment = this.segmentBuffer.get(nextExpectedIndex);
+
+      if (segment) {
+        const segmentName = segment.origiName;
         const extInf = this.getExtInfFromManifest(this.originalManifest, segmentName);
 
         if (!extInf) {
-          throw new Error(`Failed to get EXTINF for ${segmentName}`);
+          const deferrals = this.deferralCounts.get(segmentName) || 0;
+
+          if (deferrals >= this.MAX_DEFERRALS) {
+            this.logger.error(
+              `Segment ${segmentName} never appeared in manifest after ${deferrals} attempts, skipping`,
+            );
+
+            this.segmentBuffer.delete(nextExpectedIndex);
+            this.deferralCounts.delete(segmentName);
+            this.lastProcessedIndex = nextExpectedIndex;
+
+            continue;
+          }
+
+          this.deferralCounts.set(segmentName, deferrals + 1);
+          this.logger.debug(
+            `Segment ${segmentName} not yet in manifest, deferring (attempt ${deferrals + 1}/${this.MAX_DEFERRALS})`,
+          );
+          return null;
         }
 
-        return this.buildSegmentEntry(extInf, oldestSegment.ref);
+        this.segmentBuffer.delete(nextExpectedIndex);
+        this.deferralCounts.delete(segmentName);
+        this.lastProcessedIndex = segment.index;
+
+        this.logger.debug(
+          `Processing segment ${segmentName} (index ${segment.index}). Buffer size: ${this.segmentBuffer.size}`,
+        );
+
+        return this.buildSegmentEntry(extInf, segment.ref);
+      }
+
+      if (this.segmentBuffer.size > 0) {
+        const bufferIndices = Array.from(this.segmentBuffer.keys()).sort((a, b) => a - b);
+        this.logger.debug(`Waiting for segment index ${nextExpectedIndex}. Buffer has: [${bufferIndices.join(', ')}]`);
       }
 
       attempt++;
@@ -126,7 +207,18 @@ export class ManifestManager {
 
   public addToSegmentBuffer(segmentPath: string, ref: string) {
     const origiName = path.basename(segmentPath);
-    this.segmentBuffer.push({ origiName, ref });
+
+    const match = origiName.match(/^index(\d+)\.ts$/);
+    if (!match) {
+      this.logger.warn(`Could not extract index from segment name: ${origiName}, using -1`);
+      this.segmentBuffer.set(-1, { origiName, ref, index: -1 });
+      return;
+    }
+
+    const index = parseInt(match[1], 10);
+    this.segmentBuffer.set(index, { origiName, ref, index });
+
+    this.logger.debug(`Added segment ${origiName} (index ${index}) to buffer. Buffer size: ${this.segmentBuffer.size}`);
   }
 
   public isFinalVODManifestValid(): boolean {
@@ -152,9 +244,92 @@ export class ManifestManager {
     return hasExtinf && hasUri;
   }
 
-  private extractMediaSequenceFromManifest(manifest: string): number | null {
-    const match = manifest.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/m);
-    return match ? parseInt(match[1], 10) : null;
+  public async waitForStreamDrain(
+    dirPath: string,
+    updateManifest: () => Promise<void>,
+    timeout: number = 5 * 60 * 1000,
+  ): Promise<boolean> {
+    let lastIndex = this.getMaxSegmentIndex(dirPath);
+    let lastBufferSize = this.segmentBuffer.size;
+
+    if (lastIndex === -1 && lastBufferSize === 0) {
+      return true;
+    }
+
+    const start = Date.now();
+
+    this.logger.log(`Waiting for stream drain: .ts max index=${lastIndex}, buffer size=${lastBufferSize}`);
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      await sleep(2000);
+
+      const currentIndex = this.getMaxSegmentIndex(dirPath);
+      const currentBufferSize = this.segmentBuffer.size;
+
+      if (currentIndex === -1 && currentBufferSize === 0) {
+        this.logger.log(`Stream drain complete: all .ts segments removed and buffer empty.`);
+        return true;
+      }
+
+      if (currentBufferSize > 0) {
+        this.logger.debug(`Buffer not empty (size: ${currentBufferSize}), updating manifest...`);
+        await updateManifest();
+      }
+
+      if (currentIndex >= lastIndex && currentBufferSize >= lastBufferSize && Date.now() - start > timeout) {
+        this.logger.warn(`Drain timeout after 5 minutes. Force-processing ${currentBufferSize} stuck segments...`);
+
+        const sortedIndices = Array.from(this.segmentBuffer.keys()).sort((a, b) => a - b);
+
+        for (const index of sortedIndices) {
+          const segment = this.segmentBuffer.get(index)!;
+          const duration = '5.0';
+          const entry = this.buildSegmentEntry(duration, segment.ref);
+          this.buildVODManifest(entry);
+          this.segmentBuffer.delete(index);
+        }
+
+        this.logger.log(`Force-processed all stuck segments. VOD manifest completed.`);
+        return true;
+      }
+
+      if (currentIndex >= lastIndex && currentIndex !== -1) {
+        this.logger.debug(`Still waiting… .ts segment index not decreasing (still at ${currentIndex})`);
+      }
+
+      if (currentBufferSize >= lastBufferSize && currentBufferSize !== 0) {
+        this.logger.debug(`Still waiting… buffer size not decreasing (still at ${currentBufferSize})`);
+      }
+
+      lastIndex = currentIndex;
+      lastBufferSize = currentBufferSize;
+    }
+  }
+
+  public cleanup() {
+    this.segmentBuffer.clear();
+    this.deferralCounts.clear();
+    this.lastProcessedIndex = -1;
+    this.originalManifest = '';
+    this.hlsOriginalHeaders = [];
+    this.logger.log('ManifestManager cleaned up');
+  }
+
+  private getMaxSegmentIndex(dir: string): number {
+    let max = -1;
+    const files = fs.readdirSync(dir);
+
+    for (const file of files) {
+      const match = file.match(/^index(\d+)\.ts$/);
+      if (match) {
+        const index = parseInt(match[1], 10);
+        if (index > max) {
+          max = index;
+        }
+      }
+    }
+    return max;
   }
 
   private extractHlsHeaders() {
@@ -189,101 +364,6 @@ export class ManifestManager {
       }
     }
     return null;
-  }
-
-  private extractSegmentEntriesFromVODManifest(mediaSequence: number): string[] {
-    const vodManifestPath = this.getVODManifestPath();
-    if (!fs.existsSync(vodManifestPath)) {
-      throw new Error(`VOD manifest not found: ${vodManifestPath}`);
-    }
-
-    const manifest = fs.readFileSync(vodManifestPath, 'utf-8');
-    const lines = manifest.trim().split('\n');
-    const entries: string[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith('#EXTINF')) {
-        const segmentLine = lines[i + 1];
-        if (segmentLine && !segmentLine.startsWith('#')) {
-          entries.push(`${lines[i]}\n${segmentLine}`);
-          i++; // skip the next line (segment URL) since we already added it
-        }
-      }
-    }
-
-    return entries.slice(mediaSequence);
-  }
-
-  public async waitForStreamDrain(
-    dirPath: string,
-    updateManifest: () => Promise<void>,
-    timeout: number = 5 * 60 * 1000,
-  ): Promise<boolean> {
-    let lastIndex = this.getMaxSegmentIndex(dirPath);
-    let lastBufferSize = this.segmentBuffer.length;
-
-    if (lastIndex === -1 && lastBufferSize === 0) {
-      return true;
-    }
-
-    const start = Date.now();
-
-    this.logger.log(`Waiting for stream drain: .ts max index=${lastIndex}, buffer size=${lastBufferSize}`);
-
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      await sleep(2000);
-
-      const currentIndex = this.getMaxSegmentIndex(dirPath);
-      const currentBufferSize = this.segmentBuffer.length;
-
-      // Check for drain completion
-      if (currentIndex === -1 && currentBufferSize === 0) {
-        this.logger.log(`Stream drain complete: all .ts segments removed and buffer empty.`);
-        return true;
-      }
-
-      // If buffer not empty, call updateManifest
-      if (currentBufferSize > 0) {
-        this.logger.debug(`Buffer not empty (size: ${currentBufferSize}), updating manifest...`);
-        await updateManifest();
-      }
-
-      // Timeout if nothing is progressing
-      if (currentIndex >= lastIndex && currentBufferSize >= lastBufferSize && Date.now() - start > timeout) {
-        this.logger.warn(
-          `Drain stuck at .ts index ${currentIndex}, buffer size ${currentBufferSize} for over 5 minutes, aborting wait.`,
-        );
-        return false;
-      }
-
-      if (currentIndex >= lastIndex && currentIndex !== -1) {
-        this.logger.debug(`Still waiting… .ts segment index not decreasing (still at ${currentIndex})`);
-      }
-
-      if (currentBufferSize >= lastBufferSize && currentBufferSize !== 0) {
-        this.logger.debug(`Still waiting… buffer size not decreasing (still at ${currentBufferSize})`);
-      }
-
-      lastIndex = currentIndex;
-      lastBufferSize = currentBufferSize;
-    }
-  }
-
-  private getMaxSegmentIndex(dir: string): number {
-    let max = -1;
-    const files = fs.readdirSync(dir);
-
-    for (const file of files) {
-      const match = file.match(/^index(\d+)\.ts$/);
-      if (match) {
-        const index = parseInt(match[1], 10);
-        if (index > max) {
-          max = index;
-        }
-      }
-    }
-    return max;
   }
 
   private getOrigiManifestPath(): string {
