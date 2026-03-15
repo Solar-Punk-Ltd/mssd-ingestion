@@ -68,7 +68,11 @@ function authenticateStream(streamPath: string, args: Record<string, any>, sessi
   }
 }
 
-export function startRtmpServer(mRootPath: string, providedFFmpegPath: string): void {
+export function stopRtmpServer(nms: NodeMediaServer): void {
+  nms.stop();
+}
+
+export function startRtmpServer(mRootPath: string, providedFFmpegPath: string): NodeMediaServer | undefined {
   if (!mRootPath) {
     logger.error('Media root path is required.');
     return;
@@ -139,4 +143,6 @@ export function startRtmpServer(mRootPath: string, providedFFmpegPath: string): 
   });
 
   nms.run();
+
+  return nms;
 }
