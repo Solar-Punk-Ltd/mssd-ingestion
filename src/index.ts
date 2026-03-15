@@ -1,17 +1,16 @@
 import fs from 'fs';
-import NodeMediaServer from 'node-media-server';
 
 import 'dotenv/config';
 
 import { DirectoryHandler } from './libs/DirectoryHandler.js';
 import { Logger } from './libs/Logger.js';
-import { startRtmpServer, stopRtmpServer } from './libs/RTMPServer.js';
+import { SrtServerHandle, startSrtServer, stopSrtServer } from './libs/SRTServer.js';
 
 const logger = Logger.getInstance();
 const mediaRootPath = process.argv[2] || './media';
 const ffmpegPath = process.argv[3];
 
-let rtmpServer: NodeMediaServer | undefined;
+let srtServer: SrtServerHandle | undefined;
 let isShuttingDown = false;
 
 async function gracefulShutdown(signal: string) {
@@ -28,10 +27,10 @@ async function gracefulShutdown(signal: string) {
     await dirHandler.cleanup();
     logger.info('Directory handler and all streams stopped');
 
-    if (rtmpServer) {
-      stopRtmpServer(rtmpServer);
-      rtmpServer = undefined;
-      logger.info('RTMP server stopped');
+    if (srtServer) {
+      await stopSrtServer(srtServer);
+      srtServer = undefined;
+      logger.info('SRT server stopped');
     }
 
     DirectoryHandler.stopCleanup();
@@ -68,8 +67,8 @@ async function startServer() {
       fs.rmSync(mediaRootPath, { recursive: true, force: true });
     }
 
-    rtmpServer = startRtmpServer(mediaRootPath, ffmpegPath);
-    logger.info('RTMP server started successfully');
+    srtServer = startSrtServer(mediaRootPath, ffmpegPath);
+    logger.info('SRT server started successfully');
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
