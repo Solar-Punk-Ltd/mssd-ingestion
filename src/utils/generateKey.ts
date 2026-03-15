@@ -39,10 +39,15 @@ export function runCLI(): void {
 
   const stream = options.stream;
   const expiresInMinutes = parsePositiveInteger(options.expires, 'Expires');
-  const secret = getEnvVariable('RTMP_SECRET');
+  const secret = getEnvVariable('STREAM_SECRET');
+  const srtPort = process.env.SRT_PORT || '9000';
 
   const streamKey = generateStreamKey(stream, secret, expiresInMinutes);
 
-  logger.log('OBS Stream Key:', streamKey);
-  logger.log('Full RTMP URL example:', `rtmp://localhost/video/${streamKey}`);
+  logger.log('Stream Key:', streamKey);
+  logger.log('Video SRT URL:', `srt://localhost:${srtPort}?pkt_size=1316&streamid=${encodeURIComponent(streamKey)}`);
+  logger.log(
+    'Audio SRT URL:',
+    `srt://localhost:${parseInt(srtPort, 10) + 1}?pkt_size=1316&streamid=${encodeURIComponent(streamKey)}`,
+  );
 }
