@@ -1,278 +1,180 @@
 # mssd-ingestion Server
 
-A robust SRT ingestion server designed for generating HLS (HTTP Live Streaming) streams, with integrated support for
-uploading content to the Swarm decentralized storage network and broadcasting stream status via GSOC.
+A live streaming ingestion server that receives SRT streams via [SRS](https://github.com/ossrs/srs), segments them into HLS, and uploads segments to the Swarm decentralized network. Stream discovery is handled via GSOC.
 
-## Table of Contents
+## Architecture
 
-1. [Overview](#overview)
-2. [Features](#features)
-3. [Architectural Overview](#architectural-overview)
-4. [Prerequisites](#prerequisites)
-5. [Installation](#installation)
-6. [Building the Project](#building-the-project)
-7. [Configuration](#configuration)
+```
+OBS/FFmpeg
+    |
+    | SRT (UDP)
+    v
+SRS (Docker) ──── writes HLS segments to disk
+    |
+    | HTTP callbacks (on_publish, on_hls, on_unpublish)
+    v
+Node.js App ──── uploads segments to Swarm
+    |              builds live + VOD manifests
+    |              broadcasts via GSOC
+    v
+Swarm Network ◄── Players pull segments from here
+```
 
-   - [Environment Variables](#environment-variables)
-   - [OBS Studio Setup](#obs-studio-setup)
-
-8. [Running the Server](#running-the-server)
-9. [Testing the Setup](#testing-the-setup)
-
-   - [Sending Video Test Streams](#sending-video-test-streams)
-   - [Sending Audio-Only Test Streams](#sending-audio-only-test-streams)
-
-10. [Accessing HLS Streams](#accessing-hls-streams)
-
-    - [Local HLS Playback](#local-hls-playback)
-    - [Swarm HLS Playback](#swarm-hls-playback)
-
-11. [Complete Workflow Example](#complete-workflow-example)
-12. [Important Notes](#important-notes)
-13. [Further Reading & Resources](#further-reading--resources)
-
-## Overview
-
-The `mssd-ingestion` server provides comprehensive functionality to handle SRT (Secure Reliable Transport)
-connections. It manages server-side operations for establishing and maintaining SRT streams, processing incoming media,
-generating HLS playlists and segments, and leveraging Swarm for decentralized content distribution and discovery.
-
-This project acts as a streaming ingestion hub, enabling content creators to stream via SRT (e.g., using OBS Studio),
-have their streams automatically converted to HLS, and then distributed via Swarm.
-
-## Features
-
-- **SRT Ingestion**: Accepts SRT streams from clients like OBS Studio or other compatible software. Uses FFmpeg in
-  listener mode with two pre-started processes: video (port 9000) and audio (port 9001).
-- **HLS Generation**: Automatically converts incoming SRT streams into HLS format (`.m3u8` playlists and `.ts`
-  segments).
-- **Swarm Integration**: Uploads generated HLS segments and manifests to the Swarm network.
-- **Dynamic Manifests**: Creates and manages both live and VOD (Video on Demand) HLS manifests.
-- **GSOC Broadcasting**: Announces stream start and stop events using GSOC for decentralized stream discovery by
-  aggregators or dApps.
-- **Secure Streaming**: Optional SRT AES encryption via shared passphrase between server and client.
-- **Video / Audio**: Separate SRT ports for video and audio streams.
-- **Auto-Restart**: FFmpeg processes automatically restart after a stream ends, ready for the next connection.
-
-## Architectural Overview
-
-1.  **SRT Ingestion**: The server receives an SRT stream from a client (e.g., OBS Studio). If `SRT_PASSPHRASE` is set,
-    only clients with the matching passphrase can connect.
-2.  **Stream Processing**: FFmpeg in SRT listener mode receives the incoming MPEG-TS stream and converts it to HLS.
-    Two FFmpeg processes run simultaneously: one for video on port 9000 and one for audio on port 9001.
-3.  **Segment Monitoring & Upload**: A file watcher actively monitors the designated media directory for new HLS
-    segments (`.ts` files). As new segments are generated, they are uploaded to Swarm.
-4.  **Manifest Management**: Concurrently, two types of HLS manifests (`.m3u8` files) are maintained:
-    - **Live Manifest**: Adheres to standard HLS live streaming conventions, updated continuously as new segments become
-      available.
-    - **VOD Manifest**: Conforms to HLS VOD standards, finalized when the stream ends to represent the complete
-      recording.
-5.  **Swarm Manifest Upload**: During live streaming, the live HLS manifest is regularly uploaded to Swarm under the
-    stream's feed. Upon stream termination, the final VOD manifest is uploaded.
-6.  **Stream Discovery via GSOC**: To announce stream status (start/stop), the server sends GSOC updates. These updates
-    can be captured by an aggregator service (e.g.,
-    [swarm-stream-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)), which can then create a
-    protected feed. This feed enables dApps to dynamically display, hide, or react to stream availability.
+**Event-driven**: SRS notifies the Node app the instant each segment is ready via `on_hls` callback. No file polling.
 
 ## Prerequisites
 
-Ensure the following software is installed and configured on your system:
+- [Node.js](https://nodejs.org/) >= 18
+- [pnpm](https://pnpm.io/)
+- [Docker](https://www.docker.com/) (for SRS)
+- A running Swarm Bee node
 
-- [Node.js](https://nodejs.org/)
-- [pnpm](https://pnpm.io/) (Package manager)
-- [FFmpeg](https://ffmpeg.org/) (For SRT listening and HLS generation, must be compiled with SRT support)
-- A running Swarm Bee Node (for interacting with the Swarm network)
-- **(Optional)** For a demonstration of dApp integration:
-  [swarm-stream-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)
-
-## Installation
-
-1.  Clone the repository:
-
-    ```bash
-    git clone https://github.com/Solar-Punk-Ltd/mssd-ingestion.git
-    cd mssd-ingestion
-    ```
-
-2.  Install project dependencies:
-
-    ```bash
-    pnpm install
-    ```
-
-## Building the Project
-
-To compile the TypeScript code into JavaScript, execute:
+## Quick Start
 
 ```bash
-pnpm build
-```
+# 1. Install dependencies
+pnpm install
 
-This will generate the compiled output in the `dist` directory.
+# 2. Build
+pnpm build
+
+# 3. Configure
+cp .env.sample .env
+# Edit .env with your Bee node URL, stamp, keys, etc.
+
+# 4. Start SRS media server
+pnpm srs:up
+
+# 5. Start the ingestion server
+pnpm start
+
+# 6. Stream from OBS (see OBS Setup below)
+```
 
 ## Configuration
 
 ### Environment Variables
 
-Before starting the server, ensure the following environment variables are correctly set (e.g., in a `.env` file based
-on `.env.sample`):
+Copy `.env.sample` to `.env` and configure:
 
 **Swarm / Bee node:**
 
-- `BEE_URL`: The API endpoint URL of your Bee Swarm node (e.g., `http://localhost:1633`).
-- `STAMP`: A valid Swarm postage stamp ID required for uploading data to Swarm.
-- `MANIFEST_ACCESS_URL`: The public base URL through which HLS segments will be accessed when referenced in manifests
-  (this might be your Bee node's BZZ endpoint or a gateway).
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `BEE_URL` | Bee node API endpoint | `http://localhost:1633` |
+| `STAMP` | Postage stamp ID for uploads | `0x0123...` |
+| `MANIFEST_ACCESS_URL` | (Optional) Gateway URL for segment access in manifests | `https://gateway.example.com/bytes` |
+| `STREAM_KEY` | Private key for signing feeds and GSOC messages | `6eaf...` |
 
 **Stream discovery (GSOC):**
 
-- `GSOC_RESOURCE_ID`: The mined GSOC address (resource ID) of the node used for broadcasting stream status.
-- `GSOC_TOPIC`: The topic string associated with the GSOC feed.
-- `STREAM_KEY`: The private key (e.g., Ethereum-style private key) of the stream owner, used for signing Swarm feed
-  updates and GSOC messages.
+| Variable | Description |
+|----------|-------------|
+| `GSOC_RESOURCE_ID` | Mined GSOC resource ID |
+| `GSOC_TOPIC` | GSOC topic string |
 
-**SRT ingestion:**
+**Webhook server:**
 
-- `SRT_PORT`: Base SRT port for video (default: `9000`). Audio uses `SRT_PORT + 1`.
-- `SRT_PASSPHRASE`: (Optional) Shared passphrase for SRT AES encryption. Must match the passphrase configured in OBS.
-  Leave empty to disable encryption.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WEBHOOK_PORT` | `3000` | Port for receiving SRS callbacks |
 
-More about how to setup a GSOC node:
-[GSOC Introduction (Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction)
+**SRS media server** (used by `srs/docker-compose.yml`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SRS_SRT_PORT` | `10080` | External SRT port (mapped to container) |
+| `SRT_PASSPHRASE` | (empty) | SRT AES encryption passphrase |
+| `SRS_MEDIA_PATH` | `../media` | Shared media directory |
 
 ### OBS Studio Setup
 
-1.  Go to **Settings > Stream**
-2.  Set **Service** to `Custom`
-3.  Set **Server** to your SRT URL:
-    - **Video**: `srt://your_server_ip:9000?pkt_size=1316`
-    - **Audio only**: `srt://your_server_ip:9001?pkt_size=1316`
-4.  If `SRT_PASSPHRASE` is set on the server, append it to the URL:
-    ```
-    srt://your_server_ip:9000?pkt_size=1316&passphrase=your_passphrase
-    ```
+1. Go to **Settings > Stream**
+2. Set **Service** to `Custom`
+3. Set **Server** to:
+   - **Video**: `srt://your_server_ip:10080?streamid=#!::r=video/mystream,m=publish`
+   - **Audio only**: `srt://your_server_ip:10080?streamid=#!::r=audio/mystream,m=publish`
+4. If `SRT_PASSPHRASE` is set, it's handled at the SRT transport level (configured in SRS, matched by OBS SRT settings).
 
-That's it. No stream key generation needed.
+## Running
 
-## Running the Server
-
-Start the SRT server by providing the path to your media root directory (where HLS files will be stored locally) and,
-optionally, the path to your FFmpeg binary. If the FFmpeg path is omitted, the system's default FFmpeg installation will
-be used.
+### Start SRS
 
 ```bash
-node dist/index.js <MEDIAROOT_PATH> [<FFMPEG_PATH>]
+pnpm srs:up        # Start SRS in background
+pnpm srs:logs      # View SRS logs
+pnpm srs:down      # Stop SRS
 ```
 
-**Example**:
+### Start the Ingestion Server
 
 ```bash
-node dist/index.js ./media_output /usr/local/bin/ffmpeg
+pnpm start
+# Or with custom media path:
+node dist/index.js ./my_media_dir
 ```
 
-Make sure all required environment variables are set before running this command.
+## Testing
 
-The server starts two FFmpeg processes in SRT listener mode:
-- **Video**: Listens on `SRT_PORT` (default 9000)
-- **Audio**: Listens on `SRT_PORT + 1` (default 9001)
-
-Each FFmpeg process accepts one SRT connection at a time. When a stream ends, the process automatically restarts and
-is ready for the next connection.
-
-## Testing the Setup
-
-You can use FFmpeg to send test streams to your running `mssd-ingestion` server to verify its functionality.
-
-### Running Unit Tests
+### Unit Tests
 
 ```bash
 pnpm test
 ```
 
-### Sending Video Test Streams
+### Send a Test Stream
 
-This command generates a test video pattern with audio and streams it via SRT:
-
-```bash
-ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f mpegts "srt://localhost:9000?pkt_size=1316"
-```
-
-### Sending Audio-Only Test Streams
-
-This command captures audio from the default microphone (macOS example) and streams it:
+Video + audio test pattern:
 
 ```bash
-ffmpeg -f avfoundation -i ":0" -ac 1 -c:a aac -b:a 128k -f mpegts "srt://localhost:9001?pkt_size=1316"
+ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 \
+  -f lavfi -i sine=frequency=1000 \
+  -c:v libx264 -preset veryfast -g 45 -c:a aac -b:a 128k \
+  -f mpegts "srt://localhost:10080?streamid=#!::r=video/test,m=publish"
 ```
 
-Adjust input `-i` for your operating system if not macOS.
+Audio-only test:
 
-Upon successful ingestion, HLS files (`.m3u8` playlist and `.ts` segments) will be generated in the specified
-`<MEDIAROOT_PATH>`.
-
-## Accessing HLS Streams
-
-### Local HLS Playback
-
-Test the generated HLS stream using a compatible player like VLC Media Player:
-
-1.  Open VLC.
-2.  Navigate to **Media \> Open Network Stream...** (or equivalent).
-3.  Enter the local HTTP URL for the stream's manifest:
-    ```
-    http://localhost:8000/video/<your_stream_name>/index.m3u8
-    ```
-    (Assuming the server's HTTP component runs on port 8000 and your stream name is `<your_stream_name>`).
-
-### Swarm HLS Playback
-
-Once segments and manifests are uploaded to Swarm and announced via GSOC, the HLS stream can be accessed through a Swarm
-access point (e.g., your Bee node or a public gateway).
-
-During start all your stream details are logged: `Broadcasting start with data: ${JSON.stringify(data)}` During stop all
-your stream details are logged: `Broadcasting stop with data: ${JSON.stringify(data)}`
-
-The owner of the feed is based on the STREAM_KEY you provided. The topic is randomly generated. You can manually call
-the stream like this:
-
-```
-GET <bee url>/feeds/<owner>/<topic>
+```bash
+ffmpeg -f avfoundation -i ":0" -ac 1 -c:a aac -b:a 128k \
+  -f mpegts "srt://localhost:10080?streamid=#!::r=audio/test,m=publish"
 ```
 
-More about feeds:
-[Swarm Feeds Documentation](https://docs.ethswarm.org/docs/develop/tools-and-features/feeds#what-are-feeds)
+## How It Works
 
-## Complete Workflow Example
+1. **Stream starts**: OBS sends SRT stream to SRS. SRS calls `on_publish` webhook. Node app creates a `SwarmStreamUploader`.
+2. **Every 1.5s**: SRS writes a `.ts` segment and calls `on_hls` webhook. Node app immediately reads the segment, uploads it to Swarm, and updates the live manifest.
+3. **Stream ends**: SRS calls `on_unpublish` webhook. Node app drains any in-flight uploads, finalizes the VOD manifest with `#EXT-X-ENDLIST`, and broadcasts a GSOC stop message.
 
-1.  **Configure**: Set up your `.env` file with all required variables.
-2.  **Start the Server**:
-    ```bash
-    node dist/index.js ./media_files /opt/homebrew/bin/ffmpeg
-    ```
-3.  **Configure OBS**: Set Server to `srt://your_server_ip:9000?pkt_size=1316` (add `&passphrase=...` if using
-    encryption). Start streaming.
-4.  **Verify Local HLS**: Open the HLS URL in VLC.
-5.  **Verify Swarm HLS (if aggregator is set up)**: Access the stream via the Swarm URL provided by your aggregator or
-    GSOC feed lookup.
+Players discover streams via GSOC and pull segments directly from Swarm.
 
-## Important Notes
+## Swarm Playback
 
-- Ensure the `<MEDIAROOT_PATH>` directory exists and is writable by the user running the server.
-- The FFmpeg binary must be executable and correctly pathed if not in the system's default PATH.
-- FFmpeg must be compiled with SRT support (`--enable-libsrt`).
-- Correctly configured environment variables are crucial for server operation, especially for Swarm integration.
-- Firewall: Ensure ports 9000-9001 (default SRT) are open if accessing the server remotely.
-- Swarm Connectivity: Verify that the server can connect to your Bee Swarm node and that the provided postage stamp
-  (`STAMP`) is valid and has sufficient balance.
-- SRT uses MPEG-TS as its container format. When configuring OBS or other streaming software, ensure the output format
-  is set to MPEG-TS.
+Stream details are logged on start and stop. The feed is accessible at:
+
+```
+GET <bee_url>/feeds/<owner>/<topic>
+```
+
+Where `owner` is derived from `STREAM_KEY` and `topic` is randomly generated per stream session.
+
+## Scripts
+
+| Script | Description |
+|--------|-------------|
+| `pnpm build` | Compile TypeScript |
+| `pnpm start` | Start the ingestion server |
+| `pnpm srs:up` | Start SRS Docker container |
+| `pnpm srs:down` | Stop SRS Docker container |
+| `pnpm srs:logs` | Tail SRS logs |
+| `pnpm test` | Run unit tests |
+| `pnpm lint` | Run ESLint |
+| `pnpm coverage` | Run tests with coverage |
 
 ## Resources
 
-- [Swarm Feeds Documentation](https://docs.ethswarm.org/docs/develop/tools-and-features/feeds#what-are-feeds)
-- [GSOC Introduction (Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction)
-- [Example Stream Aggregator: Solar-Punk-Ltd/swarm-stream-aggregator-js](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)
--
-  [Example Stream Client: Solar-Punk-Ltd/swarm-ingestion-stream-react-example](https://github.com/Solar-Punk-Ltd/swarm-ingestion-stream-react-example)
+- [SRS (Simple Realtime Server)](https://github.com/ossrs/srs)
+- [Swarm Feeds](https://docs.ethswarm.org/docs/develop/tools-and-features/feeds)
+- [GSOC Introduction](https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction)
 - [SRT Protocol](https://www.haivision.com/products/srt-secure-reliable-transport/)
-- [FFmpeg SRT Documentation](https://ffmpeg.org/ffmpeg-protocols.html#srt)
+- [Swarm Stream Aggregator](https://github.com/Solar-Punk-Ltd/swarm-stream-aggregator-js)

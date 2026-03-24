@@ -4,13 +4,12 @@ import 'dotenv/config';
 
 import { DirectoryHandler } from './libs/DirectoryHandler.js';
 import { Logger } from './libs/Logger.js';
-import { SrtServerHandle, startSrtServer, stopSrtServer } from './libs/SRTServer.js';
+import { startWebhookServer, WebhookServerHandle } from './libs/WebhookServer.js';
 
 const logger = Logger.getInstance();
 const mediaRootPath = process.argv[2] || './media';
-const ffmpegPath = process.argv[3];
 
-let srtServer: SrtServerHandle | undefined;
+let webhookServer: WebhookServerHandle | undefined;
 let isShuttingDown = false;
 
 async function gracefulShutdown(signal: string) {
@@ -27,10 +26,9 @@ async function gracefulShutdown(signal: string) {
     await dirHandler.cleanup();
     logger.info('Directory handler and all streams stopped');
 
-    if (srtServer) {
-      await stopSrtServer(srtServer);
-      srtServer = undefined;
-      logger.info('SRT server stopped');
+    if (webhookServer) {
+      await webhookServer.close();
+      webhookServer = undefined;
     }
 
     DirectoryHandler.stopCleanup();
@@ -62,13 +60,11 @@ process.on('unhandledRejection', (reason, promise) => {
 
 async function startServer() {
   try {
-    // Clean up previous run
-    if (fs.existsSync(mediaRootPath)) {
-      fs.rmSync(mediaRootPath, { recursive: true, force: true });
-    }
+    // Ensure media directory exists (don't delete — SRS may be using it)
+    fs.mkdirSync(mediaRootPath, { recursive: true });
 
-    srtServer = startSrtServer(mediaRootPath, ffmpegPath);
-    logger.info('SRT server started successfully');
+    webhookServer = startWebhookServer(mediaRootPath);
+    logger.info('Webhook server started — waiting for SRS stream events');
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
