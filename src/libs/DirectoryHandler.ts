@@ -11,7 +11,7 @@ import { MediaWatcher } from './MediaWatcher.js';
 import { SwarmStreamUploader } from './SwarmStreamUploader.js';
 
 const BEE_URL = getEnvVariable('BEE_URL');
-const MANIFEST_ACCESS_URL = getEnvVariable('MANIFEST_ACCESS_URL');
+const MANIFEST_ACCESS_URL = getEnvVariable('MANIFEST_ACCESS_URL', '');
 const STREAM_KEY = getEnvVariable('STREAM_KEY');
 const STAMP = getEnvVariable('STAMP');
 const GSOC_RESOURCE_ID = getEnvVariable('GSOC_RESOURCE_ID');

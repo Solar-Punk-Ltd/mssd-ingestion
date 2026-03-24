@@ -420,6 +420,7 @@ export class ManifestManager {
   }
 
   private buildSegmentEntry(duration: string, ref: string): string {
-    return `#EXTINF:${duration},\n${this.manifestBeeUrl}/${ref}`;
+    const uri = this.manifestBeeUrl ? `${this.manifestBeeUrl}/${ref}` : ref;
+    return `#EXTINF:${duration},\n${uri}`;
   }
 }

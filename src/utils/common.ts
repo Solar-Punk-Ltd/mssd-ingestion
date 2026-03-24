@@ -4,9 +4,12 @@ import { Logger } from '../libs/Logger.js';
 const logger = Logger.getInstance();
 const errorHandler = ErrorHandler.getInstance();
 
-export function getEnvVariable(name: string): string {
+export function getEnvVariable(name: string, defaultValue?: string): string {
   const value = process.env[name];
   if (!value) {
+    if (defaultValue !== undefined) {
+      return defaultValue;
+    }
     throw new Error(`${name} environment variable is not defined`);
   }
   return value;
