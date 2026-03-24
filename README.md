@@ -13,8 +13,8 @@ uploading content to the Swarm decentralized storage network and broadcasting st
 6. [Building the Project](#building-the-project)
 7. [Configuration](#configuration)
 
-   - [HMAC Stream Key Generation](#hmac-stream-key-generation)
    - [Environment Variables](#environment-variables)
+   - [OBS Studio Setup](#obs-studio-setup)
 
 8. [Running the Server](#running-the-server)
 9. [Testing the Setup](#testing-the-setup)
@@ -50,15 +50,14 @@ have their streams automatically converted to HLS, and then distributed via Swar
 - **Dynamic Manifests**: Creates and manages both live and VOD (Video on Demand) HLS manifests.
 - **GSOC Broadcasting**: Announces stream start and stop events using GSOC for decentralized stream discovery by
   aggregators or dApps.
-- **Secure Streaming**: Implements HMAC-based authentication for stream keys, with optional SRT AES encryption via
-  passphrase.
+- **Secure Streaming**: Optional SRT AES encryption via shared passphrase between server and client.
 - **Video / Audio**: Separate SRT ports for video and audio streams.
 - **Auto-Restart**: FFmpeg processes automatically restart after a stream ends, ready for the next connection.
 
 ## Architectural Overview
 
-1.  **Authenticated Ingestion**: The server receives an SRT stream from a client (e.g., OBS Studio), authenticated
-    using a signed stream key passed via the SRT `streamid` parameter.
+1.  **SRT Ingestion**: The server receives an SRT stream from a client (e.g., OBS Studio). If `SRT_PASSPHRASE` is set,
+    only clients with the matching passphrase can connect.
 2.  **Stream Processing**: FFmpeg in SRT listener mode receives the incoming MPEG-TS stream and converts it to HLS.
     Two FFmpeg processes run simultaneously: one for video on port 9000 and one for audio on port 9001.
 3.  **Segment Monitoring & Upload**: A file watcher actively monitors the designated media directory for new HLS
@@ -113,66 +112,47 @@ This will generate the compiled output in the `dist` directory.
 
 ## Configuration
 
-### HMAC Stream Key Generation
-
-For secure stream ingestion, the server uses HMAC-based authentication for stream keys. The `STREAM_SECRET`
-environment variable is crucial for this process.
-
-1.  **Set the `STREAM_SECRET`**: This secret key is used to sign and verify stream keys. It can be set as an environment
-    variable, defined in a `.env` file, or provided directly during command execution.
-
-    ```bash
-    export STREAM_SECRET=your_super_secret_key
-    ```
-
-    Alternatively, include `STREAM_SECRET=your_super_secret_key` in your `.env` file.
-
-2.  **Generate the Stream Key**: Use the provided npm script. The `-s` flag specifies the stream name, and `-e` defines
-    the expiration duration in minutes.
-
-    ```bash
-    STREAM_SECRET=test_secret pnpm run generate-stream-key -- -s my_stream_name -e 60
-    ```
-
-    **Example Output**:
-
-    ```
-    [time] [LOG] - Stream Key: my_stream_name?exp=1744276392&sign=6a22edfc68c073ab71dee70ce3f8907a20ab0795b958aa67499840e6483a80ab
-    [time] [LOG] - Video SRT URL: srt://localhost:9000?pkt_size=1316&streamid=my_stream_name%3Fexp%3D1744276392%26sign%3D...
-    [time] [LOG] - Audio SRT URL: srt://localhost:9001?pkt_size=1316&streamid=my_stream_name%3Fexp%3D1744276392%26sign%3D...
-    ```
-
-    The `exp` parameter indicates the expiration time as a Unix timestamp (seconds), and `sign` is the HMAC signature.
-
-3.  **Configure Your Streaming Client (e.g., OBS Studio)**:
-
-    - **Service**: Custom
-    - **Server**: `srt://your_server_ip:9000?pkt_size=1316` (for video)
-    - **Stream Key**: Use the generated stream key as the `streamid` parameter
-
-    For OBS, use the custom output URL format:
-    ```
-    srt://your_server_ip:9000?pkt_size=1316&streamid=my_stream_name%3Fexp%3D...%26sign%3D...
-    ```
-
 ### Environment Variables
 
 Before starting the server, ensure the following environment variables are correctly set (e.g., in a `.env` file based
 on `.env.sample`):
 
+**Swarm / Bee node:**
+
 - `BEE_URL`: The API endpoint URL of your Bee Swarm node (e.g., `http://localhost:1633`).
+- `STAMP`: A valid Swarm postage stamp ID required for uploading data to Swarm.
 - `MANIFEST_ACCESS_URL`: The public base URL through which HLS segments will be accessed when referenced in manifests
   (this might be your Bee node's BZZ endpoint or a gateway).
+
+**Stream discovery (GSOC):**
+
 - `GSOC_RESOURCE_ID`: The mined GSOC address (resource ID) of the node used for broadcasting stream status.
 - `GSOC_TOPIC`: The topic string associated with the GSOC feed.
-- `STREAM_KEY`: The private key (e.g., Ethereum-style private key) of the stream owner, used for signing GSOC messages.
-- `STAMP`: A valid Swarm postage stamp ID required for uploading data to Swarm.
-- `STREAM_SECRET`: The secret key used for HMAC stream key authentication, as detailed above.
+- `STREAM_KEY`: The private key (e.g., Ethereum-style private key) of the stream owner, used for signing Swarm feed
+  updates and GSOC messages.
+
+**SRT ingestion:**
+
 - `SRT_PORT`: Base SRT port for video (default: `9000`). Audio uses `SRT_PORT + 1`.
-- `SRT_PASSPHRASE`: (Optional) AES encryption passphrase for SRT connections.
+- `SRT_PASSPHRASE`: (Optional) Shared passphrase for SRT AES encryption. Must match the passphrase configured in OBS.
+  Leave empty to disable encryption.
 
 More about how to setup a GSOC node:
 [GSOC Introduction (Swarm Documentation)](https://docs.ethswarm.org/docs/develop/tools-and-features/gsoc/#introduction)
+
+### OBS Studio Setup
+
+1.  Go to **Settings > Stream**
+2.  Set **Service** to `Custom`
+3.  Set **Server** to your SRT URL:
+    - **Video**: `srt://your_server_ip:9000?pkt_size=1316`
+    - **Audio only**: `srt://your_server_ip:9001?pkt_size=1316`
+4.  If `SRT_PASSPHRASE` is set on the server, append it to the URL:
+    ```
+    srt://your_server_ip:9000?pkt_size=1316&passphrase=your_passphrase
+    ```
+
+That's it. No stream key generation needed.
 
 ## Running the Server
 
@@ -214,7 +194,7 @@ pnpm test
 This command generates a test video pattern with audio and streams it via SRT:
 
 ```bash
-ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f mpegts "srt://localhost:9000?pkt_size=1316&streamid=test"
+ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=1000 -c:v libx264 -preset veryfast -b:v 1500k -g 50 -c:a aac -b:a 128k -ar 44100 -f mpegts "srt://localhost:9000?pkt_size=1316"
 ```
 
 ### Sending Audio-Only Test Streams
@@ -222,7 +202,7 @@ ffmpeg -re -f lavfi -i testsrc=size=1280x720:rate=30 -f lavfi -i sine=frequency=
 This command captures audio from the default microphone (macOS example) and streams it:
 
 ```bash
-ffmpeg -f avfoundation -i ":0" -ac 1 -c:a aac -b:a 128k -f mpegts "srt://localhost:9001?pkt_size=1316&streamid=test"
+ffmpeg -f avfoundation -i ":0" -ac 1 -c:a aac -b:a 128k -f mpegts "srt://localhost:9001?pkt_size=1316"
 ```
 
 Adjust input `-i` for your operating system if not macOS.
@@ -265,20 +245,14 @@ More about feeds:
 ## Complete Workflow Example
 
 1.  **Configure**: Set up your `.env` file with all required variables.
-2.  **Generate Stream Key**:
-    ```bash
-    STREAM_SECRET=your_secret pnpm run generate-stream-key -- -s live_event -e 120
-    ```
-    Copy the output stream key and SRT URLs.
-3.  **Start the Server**:
+2.  **Start the Server**:
     ```bash
     node dist/index.js ./media_files /opt/homebrew/bin/ffmpeg
     ```
-4.  **Stream with OBS or FFmpeg**: Use the generated SRT URL to start streaming.
-    - **Video**: `srt://localhost:9000?pkt_size=1316&streamid=<generated_key>`
-    - **Audio**: `srt://localhost:9001?pkt_size=1316&streamid=<generated_key>`
-5.  **Verify Local HLS**: Open the HLS URL in VLC.
-6.  **Verify Swarm HLS (if aggregator is set up)**: Access the stream via the Swarm URL provided by your aggregator or
+3.  **Configure OBS**: Set Server to `srt://your_server_ip:9000?pkt_size=1316` (add `&passphrase=...` if using
+    encryption). Start streaming.
+4.  **Verify Local HLS**: Open the HLS URL in VLC.
+5.  **Verify Swarm HLS (if aggregator is set up)**: Access the stream via the Swarm URL provided by your aggregator or
     GSOC feed lookup.
 
 ## Important Notes
@@ -286,8 +260,7 @@ More about feeds:
 - Ensure the `<MEDIAROOT_PATH>` directory exists and is writable by the user running the server.
 - The FFmpeg binary must be executable and correctly pathed if not in the system's default PATH.
 - FFmpeg must be compiled with SRT support (`--enable-libsrt`).
-- Correctly configured Environment Variables are crucial for server operation, especially for Swarm integration and HMAC
-  authentication.
+- Correctly configured environment variables are crucial for server operation, especially for Swarm integration.
 - Firewall: Ensure ports 9000-9001 (default SRT) are open if accessing the server remotely.
 - Swarm Connectivity: Verify that the server can connect to your Bee Swarm node and that the provided postage stamp
   (`STAMP`) is valid and has sufficient balance.

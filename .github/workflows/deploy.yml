@@ -42,7 +42,6 @@ jobs:
           echo "GSOC_TOPIC=${{ secrets.GSOC_TOPIC }}" >> .env
           echo "STREAM_KEY=${{ secrets.STREAM_KEY }}" >> .env
           echo "STAMP=${{ secrets.STAMP }}" >> .env
-          echo "STREAM_SECRET=${{ secrets.STREAM_SECRET }}" >> .env
           echo "SRT_PORT=${{ secrets.SRT_PORT }}" >> .env
           echo "SRT_PASSPHRASE=${{ secrets.SRT_PASSPHRASE }}" >> .env
         shell: bash
