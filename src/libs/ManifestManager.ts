@@ -183,7 +183,12 @@ export class ManifestManager {
     let attempt = 0;
 
     while (attempt <= retries) {
-      const nextExpectedIndex = this.lastProcessedIndex + 1;
+      let nextExpectedIndex = this.lastProcessedIndex + 1;
+
+      // If no segments processed yet, jump to the lowest available index
+      if (this.lastProcessedIndex === -1 && this.segmentBuffer.size > 0) {
+        nextExpectedIndex = Math.min(...this.segmentBuffer.keys());
+      }
 
       const segment = this.segmentBuffer.get(nextExpectedIndex);
 
@@ -241,7 +246,7 @@ export class ManifestManager {
   public addToSegmentBuffer(segmentPath: string, ref: string) {
     const origiName = path.basename(segmentPath);
 
-    const match = origiName.match(/^index(\d+)\.ts$/);
+    const match = origiName.match(/(\d+)\.ts$/);
     if (!match) {
       this.logger.warn(`Could not extract index from segment name: ${origiName}, using -1`);
       this.segmentBuffer.set(-1, { origiName, ref, index: -1 });
@@ -278,30 +283,26 @@ export class ManifestManager {
   }
 
   public async waitForStreamDrain(
-    dirPath: string,
     updateManifest: () => Promise<void>,
     timeout: number = 5 * 60 * 1000,
   ): Promise<boolean> {
-    let lastIndex = this.getMaxSegmentIndex(dirPath);
-    let lastBufferSize = this.segmentBuffer.size;
-
-    if (lastIndex === -1 && lastBufferSize === 0) {
+    if (this.segmentBuffer.size === 0) {
       return true;
     }
 
     const start = Date.now();
+    let lastBufferSize = this.segmentBuffer.size;
 
-    this.logger.log(`Waiting for stream drain: .ts max index=${lastIndex}, buffer size=${lastBufferSize}`);
+    this.logger.log(`Waiting for stream drain: buffer size=${lastBufferSize}`);
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
       await sleep(2000);
 
-      const currentIndex = this.getMaxSegmentIndex(dirPath);
       const currentBufferSize = this.segmentBuffer.size;
 
-      if (currentIndex === -1 && currentBufferSize === 0) {
-        this.logger.log(`Stream drain complete: all .ts segments removed and buffer empty.`);
+      if (currentBufferSize === 0) {
+        this.logger.log(`Stream drain complete: buffer empty.`);
         return true;
       }
 
@@ -310,7 +311,7 @@ export class ManifestManager {
         await updateManifest();
       }
 
-      if (currentIndex >= lastIndex && currentBufferSize >= lastBufferSize && Date.now() - start > timeout) {
+      if (currentBufferSize >= lastBufferSize && Date.now() - start > timeout) {
         this.logger.warn(`Drain timeout after 5 minutes. Force-processing ${currentBufferSize} stuck segments...`);
 
         const sortedIndices = Array.from(this.segmentBuffer.keys()).sort((a, b) => a - b);
@@ -327,15 +328,6 @@ export class ManifestManager {
         return true;
       }
 
-      if (currentIndex >= lastIndex && currentIndex !== -1) {
-        this.logger.debug(`Still waiting… .ts segment index not decreasing (still at ${currentIndex})`);
-      }
-
-      if (currentBufferSize >= lastBufferSize && currentBufferSize !== 0) {
-        this.logger.debug(`Still waiting… buffer size not decreasing (still at ${currentBufferSize})`);
-      }
-
-      lastIndex = currentIndex;
       lastBufferSize = currentBufferSize;
     }
   }
@@ -349,22 +341,6 @@ export class ManifestManager {
     this.originalManifest = '';
     this.hlsOriginalHeaders = [];
     this.logger.log('ManifestManager cleaned up');
-  }
-
-  private getMaxSegmentIndex(dir: string): number {
-    let max = -1;
-    const files = fs.readdirSync(dir);
-
-    for (const file of files) {
-      const match = file.match(/^index(\d+)\.ts$/);
-      if (match) {
-        const index = parseInt(match[1], 10);
-        if (index > max) {
-          max = index;
-        }
-      }
-    }
-    return max;
   }
 
   private extractHlsHeaders() {
