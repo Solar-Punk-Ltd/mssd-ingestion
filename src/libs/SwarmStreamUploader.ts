@@ -79,7 +79,7 @@ export class SwarmStreamUploader {
   }
 
   public async waitForStreamDrain() {
-    return this.manifestManager.waitForStreamDrain(this.streamPath, this.onManifestUpdate.bind(this));
+    return this.manifestManager.waitForStreamDrain(this.onManifestUpdate.bind(this));
   }
 
   public async broadcastStop() {
@@ -142,6 +142,9 @@ export class SwarmStreamUploader {
         this.isFirstSegmentReady = true;
 
         this.logger.log(`Segment upload result: ${segmentPath}`, result.reference.toHex());
+
+        // Build manifests after segment is uploaded and buffered
+        await this.onManifestUpdate();
       } else {
         this.logger.error(`Failed to upload segment: ${segmentPath}`);
       }
