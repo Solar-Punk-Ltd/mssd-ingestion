@@ -7,7 +7,6 @@ import { getEnvVariable, retryAwaitableAsync } from '../utils/common.js';
 
 import { ErrorHandler } from './ErrorHandler.js';
 import { Logger } from './Logger.js';
-import { MediaWatcher } from './MediaWatcher.js';
 import { SwarmStreamUploader } from './SwarmStreamUploader.js';
 
 const BEE_URL = getEnvVariable('BEE_URL');
@@ -28,7 +27,6 @@ export class DirectoryHandler {
 
   private static activeStreams = new Set<string>();
   private static uploaders = new Map<string, SwarmStreamUploader>();
-  private static watchers = new Map<string, MediaWatcher>();
   private static usedStreamIds = new Set<string>();
   private static cleanupIntervalId: NodeJS.Timeout | null = null;
 
@@ -87,9 +85,9 @@ export class DirectoryHandler {
     DirectoryHandler.activeStreams.delete(fullPath);
   }
 
-  public handleStart(mediaRootPath: string, streamPath: string): void {
+  public handleStart(mediaRootPath: string, streamPath: string, mediatype?: 'video' | 'audio'): void {
     const fullPath = path.join(mediaRootPath, streamPath);
-    const mediatype = streamPath.startsWith('/audio') ? 'audio' : 'video';
+    const resolvedMediatype = mediatype || (streamPath.startsWith('/audio') ? 'audio' : 'video');
 
     if (DirectoryHandler.usedStreamIds.has(fullPath)) {
       throw new Error(
@@ -97,7 +95,7 @@ export class DirectoryHandler {
       );
     }
 
-    this.logger.info(`Handling directory: ${fullPath} with mediatype: ${mediatype}`);
+    this.logger.info(`Handling directory: ${fullPath} with mediatype: ${resolvedMediatype}`);
 
     this.queue.add(async () => {
       try {
@@ -110,18 +108,10 @@ export class DirectoryHandler {
           STREAM_KEY,
           STAMP,
           fullPath,
-          mediatype,
+          resolvedMediatype,
         );
-        const watcher = new MediaWatcher(
-          fullPath,
-          uploader.onSegmentUpdate.bind(uploader),
-          uploader.onManifestUpdate.bind(uploader),
-        );
-
-        watcher.start();
 
         DirectoryHandler.uploaders.set(fullPath, uploader);
-        DirectoryHandler.watchers.set(fullPath, watcher);
         DirectoryHandler.usedStreamIds.add(fullPath);
         this.logger.info(`Stream path "${fullPath}" marked as used`);
       } catch (error) {
@@ -130,16 +120,35 @@ export class DirectoryHandler {
     });
   }
 
+  /**
+   * Called by SRS on_hls callback when a new HLS segment is ready.
+   */
+  public handleSegment(mediaRootPath: string, streamPath: string, segmentPath: string): void {
+    const fullPath = path.join(mediaRootPath, streamPath);
+    const uploader = DirectoryHandler.uploaders.get(fullPath);
+    if (uploader) {
+      uploader.onSegmentUpdate(segmentPath);
+    } else {
+      this.logger.warn(`[DirectoryHandler] No uploader for segment: ${segmentPath} (stream: ${fullPath})`);
+    }
+  }
+
+  /**
+   * Called by SRS on_hls callback when the manifest is updated.
+   */
+  public handleManifest(mediaRootPath: string, streamPath: string): void {
+    const fullPath = path.join(mediaRootPath, streamPath);
+    const uploader = DirectoryHandler.uploaders.get(fullPath);
+    if (uploader) {
+      uploader.onManifestUpdate();
+    }
+  }
+
   public async handleStop(mediaRootPath: string, streamPath: string): Promise<void> {
     const fullPath = path.join(mediaRootPath, streamPath);
     const uploader = DirectoryHandler.uploaders.get(fullPath);
-    const watcher = DirectoryHandler.watchers.get(fullPath);
 
     await uploader?.waitForStreamDrain();
-
-    await watcher?.close();
-    DirectoryHandler.watchers.delete(fullPath);
-
     await uploader?.broadcastStop();
     DirectoryHandler.uploaders.delete(fullPath);
 
@@ -172,7 +181,6 @@ export class DirectoryHandler {
 
     DirectoryHandler.activeStreams.clear();
     DirectoryHandler.uploaders.clear();
-    DirectoryHandler.watchers.clear();
 
     this.logger.info('All streams stopped');
   }

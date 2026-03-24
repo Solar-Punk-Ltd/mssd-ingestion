@@ -58,19 +58,7 @@ vi.mock('../utils/common', async () => {
   };
 });
 
-const startMock = vi.fn();
-const closeMock = vi.fn();
 const swarmStreamUploaderMock = vi.fn();
-
-vi.mock('./MediaWatcher', () => ({
-  MediaWatcher: vi.fn().mockImplementation((p, cb) => ({
-    start: () => {
-      cb('/mock/path/file.ts');
-      startMock();
-    },
-    close: closeMock,
-  })),
-}));
 
 vi.mock('./SwarmStreamUploader', () => ({
   SwarmStreamUploader: vi.fn().mockImplementation((bee, rpcUrl, resId, topic, key, stamp, path, mediatype) => {
@@ -129,7 +117,6 @@ describe('DirectoryHandler', () => {
     handler.handleStart(basePath, audioStreamPath);
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    expect(startMock).toHaveBeenCalled();
     expect(swarmStreamUploaderMock).toHaveBeenCalledWith(
       expect.any(Object), // Bee instance
       'http://mocked-url/manifest',
@@ -146,7 +133,6 @@ describe('DirectoryHandler', () => {
     handler.handleStart(basePath, videoStreamPath);
     await new Promise(resolve => setTimeout(resolve, 200));
 
-    expect(startMock).toHaveBeenCalled();
     expect(swarmStreamUploaderMock).toHaveBeenCalledWith(
       expect.any(Object), // Bee instance
       'http://mocked-url/manifest',
@@ -165,7 +151,6 @@ describe('DirectoryHandler', () => {
 
     await handler.handleStop(basePath, audioStreamPath);
 
-    expect(closeMock).toHaveBeenCalled();
     expect(fs.rmSync).toHaveBeenCalledWith(audioFullPath, { recursive: true, force: true });
   });
 
