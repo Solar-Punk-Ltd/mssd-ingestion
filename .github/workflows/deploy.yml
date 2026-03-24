@@ -1,4 +1,4 @@
-name: Build and Deploy to VPS (PM2)
+name: Build and Deploy to VPS (PM2 + SRS)
 
 on:
   push:
@@ -42,11 +42,13 @@ jobs:
           echo "GSOC_TOPIC=${{ secrets.GSOC_TOPIC }}" >> .env
           echo "STREAM_KEY=${{ secrets.STREAM_KEY }}" >> .env
           echo "STAMP=${{ secrets.STAMP }}" >> .env
-          echo "SRT_PORT=${{ secrets.SRT_PORT }}" >> .env
+          echo "WEBHOOK_PORT=${{ secrets.WEBHOOK_PORT || '3000' }}" >> .env
+          echo "SRS_SRT_PORT=${{ secrets.SRS_SRT_PORT || '10080' }}" >> .env
           echo "SRT_PASSPHRASE=${{ secrets.SRT_PASSPHRASE }}" >> .env
+          echo "SRS_MEDIA_PATH=${{ secrets.SRS_MEDIA_PATH || '../media' }}" >> .env
         shell: bash
 
-      - name: Stop and clean old project on VPS
+      - name: Stop old services on VPS
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.SERVER_IP }}
@@ -56,18 +58,19 @@ jobs:
             export APP_HOME=${{ secrets.APP_HOME }}
             export PATH="$APP_HOME/.nvm/versions/node/v22.9.0/bin:$PATH"
             pm2 delete ingestion || true
+            cd ~/mssd-ingestion/srs && docker compose down || true
             rm -rf ~/mssd-ingestion
 
-      - name: Upload fresh project files
+      - name: Upload project files
         uses: appleboy/scp-action@v0.1.5
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: 'dist,node_modules,.env,ecosystem.config.js'
+          source: 'dist,node_modules,.env,ecosystem.config.js,srs'
           target: '~/mssd-ingestion'
 
-      - name: Start app with PM2
+      - name: Start SRS and app
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.SERVER_IP }}
@@ -77,4 +80,12 @@ jobs:
             export APP_HOME=${{ secrets.APP_HOME }}
             export PATH="$APP_HOME/.nvm/versions/node/v22.9.0/bin:$PATH"
             cd ~/mssd-ingestion
+
+            # Start SRS media server
+            cd srs && docker compose up -d && cd ..
+
+            # Wait for SRS to be ready
+            sleep 3
+
+            # Start Node app with PM2
             pm2 start ecosystem.config.js
