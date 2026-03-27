@@ -59,6 +59,7 @@ jobs:
             export PATH="$APP_HOME/.nvm/versions/node/v22.9.0/bin:$PATH"
             pm2 delete ingestion || true
             cd ~/mssd-ingestion/srs && docker compose down || true
+            docker run --rm -v ~/mssd-ingestion/media:/media alpine rm -rf /media/video /media/audio || true
             rm -rf ~/mssd-ingestion
 
       - name: Upload project files
