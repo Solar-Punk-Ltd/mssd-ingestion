@@ -90,27 +90,26 @@ describe('DirectoryHandler', () => {
 
   beforeEach(() => {
     handler = DirectoryHandler.getInstance();
-    DirectoryHandler.clearUsedStreamIds();
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    DirectoryHandler.stopCleanup();
+  afterEach(async () => {
+    await handler.cleanup();
   });
 
-  it('should acquire directory successfully', () => {
-    handler.acquireDirectory(basePath, audioStreamPath);
-    expect(() => handler.acquireDirectory(basePath, audioStreamPath)).toThrow(
+  it('should acquire directory successfully', async () => {
+    await handler.acquireDirectory(basePath, audioStreamPath);
+    await expect(handler.acquireDirectory(basePath, audioStreamPath)).rejects.toThrow(
       `Directory ${audioFullPath} is already in use.`,
     );
   });
 
-  it('should release directory successfully', () => {
+  it('should release directory successfully', async () => {
     handler.releaseDirectory(basePath, audioStreamPath);
 
-    handler.acquireDirectory(basePath, audioStreamPath);
+    await handler.acquireDirectory(basePath, audioStreamPath);
     handler.releaseDirectory(basePath, audioStreamPath);
-    expect(() => handler.acquireDirectory(basePath, audioStreamPath)).not.toThrow();
+    await expect(handler.acquireDirectory(basePath, audioStreamPath)).resolves.not.toThrow();
   });
 
   it('should start handling audio stream directory and pass mediatype as audio', async () => {
@@ -125,7 +124,7 @@ describe('DirectoryHandler', () => {
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       audioFullPath,
-      'audio', // Ensure mediatype is 'audio'
+      'audio',
     );
   });
 
@@ -141,11 +140,12 @@ describe('DirectoryHandler', () => {
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       videoFullPath,
-      'video', // Ensure mediatype is 'video'
+      'video',
     );
   });
 
   it('should stop handling directory and clean up properly', async () => {
+    await handler.acquireDirectory(basePath, audioStreamPath);
     handler.handleStart(basePath, audioStreamPath);
     await new Promise(resolve => setTimeout(resolve, 200));
 
@@ -154,29 +154,42 @@ describe('DirectoryHandler', () => {
     expect(fs.rmSync).toHaveBeenCalledWith(audioFullPath, { recursive: true, force: true });
   });
 
-  it('should track used stream IDs', async () => {
-    handler.handleStart(basePath, audioStreamPath);
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    expect(DirectoryHandler.isStreamIdUsed(audioFullPath)).toBe(true);
-    expect(DirectoryHandler.isStreamIdUsed('/nonexistent')).toBe(false);
+  it('should handle stop gracefully when no uploader exists', async () => {
+    await expect(handler.handleStop(basePath, audioStreamPath)).resolves.not.toThrow();
   });
 
-  it('should clear used stream IDs', async () => {
-    handler.handleStart(basePath, audioStreamPath);
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    DirectoryHandler.clearUsedStreamIds();
-    expect(DirectoryHandler.isStreamIdUsed(audioFullPath)).toBe(false);
-  });
-
-  it('should throw when reusing a stream path', async () => {
+  it('should allow re-use of stream path after clean stop', async () => {
+    await handler.acquireDirectory(basePath, audioStreamPath);
     handler.handleStart(basePath, audioStreamPath);
     await new Promise(resolve => setTimeout(resolve, 200));
 
     await handler.handleStop(basePath, audioStreamPath);
-    handler.releaseDirectory(basePath, audioStreamPath);
 
-    expect(() => handler.handleStart(basePath, audioStreamPath)).toThrow('has already been used');
+    // Should be able to start again on the same path
+    await handler.acquireDirectory(basePath, audioStreamPath);
+    expect(() => handler.handleStart(basePath, audioStreamPath)).not.toThrow();
+  });
+
+  it('should wait for drain before acquiring same path', async () => {
+    await handler.acquireDirectory(basePath, audioStreamPath);
+    handler.handleStart(basePath, audioStreamPath);
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // Start drain in background (non-blocking like the webhook does)
+    const stopPromise = handler.handleStop(basePath, audioStreamPath);
+
+    // Acquire should wait for drain, not throw
+    const acquirePromise = handler.acquireDirectory(basePath, audioStreamPath);
+
+    await stopPromise;
+    await expect(acquirePromise).resolves.not.toThrow();
+  });
+
+  it('should reject concurrent acquire on same active path', async () => {
+    await handler.acquireDirectory(basePath, audioStreamPath);
+    handler.handleStart(basePath, audioStreamPath);
+
+    // Second acquire while first is active (not draining) should throw
+    await expect(handler.acquireDirectory(basePath, audioStreamPath)).rejects.toThrow('already in use');
   });
 });

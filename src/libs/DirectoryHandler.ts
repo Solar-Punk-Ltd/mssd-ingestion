@@ -16,8 +16,6 @@ const STAMP = getEnvVariable('STAMP');
 const GSOC_RESOURCE_ID = getEnvVariable('GSOC_RESOURCE_ID');
 const GSOC_TOPIC = getEnvVariable('GSOC_TOPIC');
 
-const WEEK_IN_MS = 7 * 24 * 60 * 60 * 1000;
-
 export class DirectoryHandler {
   private logger = Logger.getInstance();
   private errorHandler = ErrorHandler.getInstance();
@@ -27,41 +25,10 @@ export class DirectoryHandler {
 
   private static activeStreams = new Set<string>();
   private static uploaders = new Map<string, SwarmStreamUploader>();
-  private static usedStreamIds = new Set<string>();
-  private static cleanupIntervalId: NodeJS.Timeout | null = null;
+  private static drainPromises = new Map<string, Promise<void>>();
 
   private constructor() {
     this.queue = new PQueue({ concurrency: 1 });
-    this.startWeeklyCleanup();
-  }
-
-  private startWeeklyCleanup(): void {
-    if (DirectoryHandler.cleanupIntervalId) {
-      clearInterval(DirectoryHandler.cleanupIntervalId);
-    }
-
-    DirectoryHandler.cleanupIntervalId = setInterval(() => {
-      const previousSize = DirectoryHandler.usedStreamIds.size;
-      DirectoryHandler.usedStreamIds.clear();
-      this.logger.info(`Weekly cleanup: Cleared ${previousSize} used stream IDs from history`);
-    }, WEEK_IN_MS);
-
-    this.logger.info('Started weekly stream ID cleanup');
-  }
-
-  public static stopCleanup(): void {
-    if (DirectoryHandler.cleanupIntervalId) {
-      clearInterval(DirectoryHandler.cleanupIntervalId);
-      DirectoryHandler.cleanupIntervalId = null;
-    }
-  }
-
-  public static isStreamIdUsed(streamId: string): boolean {
-    return DirectoryHandler.usedStreamIds.has(streamId);
-  }
-
-  public static clearUsedStreamIds(): void {
-    DirectoryHandler.usedStreamIds.clear();
   }
 
   public static getInstance(): DirectoryHandler {
@@ -71,8 +38,18 @@ export class DirectoryHandler {
     return DirectoryHandler.instance;
   }
 
-  public acquireDirectory(mediaRootPath: string, streamPath: string) {
+  /**
+   * Acquires the directory for a stream. If the path is currently draining
+   * from a previous stream, waits for drain to complete before acquiring.
+   */
+  public async acquireDirectory(mediaRootPath: string, streamPath: string): Promise<void> {
     const fullPath = path.join(mediaRootPath, streamPath);
+
+    const pendingDrain = DirectoryHandler.drainPromises.get(fullPath);
+    if (pendingDrain) {
+      this.logger.info(`Waiting for previous stream drain to complete: ${fullPath}`);
+      await pendingDrain;
+    }
 
     if (DirectoryHandler.activeStreams.has(fullPath)) {
       throw new Error(`Directory ${fullPath} is already in use.`);
@@ -88,12 +65,6 @@ export class DirectoryHandler {
   public handleStart(mediaRootPath: string, streamPath: string, mediatype?: 'video' | 'audio'): void {
     const fullPath = path.join(mediaRootPath, streamPath);
     const resolvedMediatype = mediatype || (streamPath.startsWith('/audio') ? 'audio' : 'video');
-
-    if (DirectoryHandler.usedStreamIds.has(fullPath)) {
-      throw new Error(
-        `Stream path "${fullPath}" has already been used. Stream paths can only be used once per cleanup cycle.`,
-      );
-    }
 
     this.logger.info(`Handling directory: ${fullPath} with mediatype: ${resolvedMediatype}`);
 
@@ -112,8 +83,7 @@ export class DirectoryHandler {
         );
 
         DirectoryHandler.uploaders.set(fullPath, uploader);
-        DirectoryHandler.usedStreamIds.add(fullPath);
-        this.logger.info(`Stream path "${fullPath}" marked as used`);
+        this.logger.info(`Uploader created for "${fullPath}"`);
       } catch (error) {
         this.logger.error(`Error handling directory ${fullPath}:`, error);
       }
@@ -146,10 +116,32 @@ export class DirectoryHandler {
 
   public async handleStop(mediaRootPath: string, streamPath: string): Promise<void> {
     const fullPath = path.join(mediaRootPath, streamPath);
+
+    const drainPromise = this.performDrain(fullPath);
+    DirectoryHandler.drainPromises.set(fullPath, drainPromise);
+
+    try {
+      await drainPromise;
+    } finally {
+      DirectoryHandler.drainPromises.delete(fullPath);
+    }
+  }
+
+  private async performDrain(fullPath: string): Promise<void> {
+    // Wait for any pending handleStart to complete so the uploader exists
+    await this.queue.onIdle();
+
     const uploader = DirectoryHandler.uploaders.get(fullPath);
 
-    await uploader?.waitForStreamDrain();
-    await uploader?.broadcastStop();
+    if (!uploader) {
+      this.logger.warn(`No uploader found for ${fullPath}, cleaning up without drain`);
+      DirectoryHandler.activeStreams.delete(fullPath);
+      await this.deleteDirectorySafe(fullPath);
+      return;
+    }
+
+    await uploader.waitForStreamDrain();
+    await uploader.broadcastStop();
     DirectoryHandler.uploaders.delete(fullPath);
 
     DirectoryHandler.activeStreams.delete(fullPath);
@@ -172,7 +164,6 @@ export class DirectoryHandler {
 
           this.logger.info(`Force stopping stream: ${streamPath}`);
           await this.handleStop(mediaRootPath, streamPath);
-          this.releaseDirectory(mediaRootPath, streamPath);
         } catch (error) {
           this.errorHandler.handleError(error, `DirectoryHandler.stopAllStreams - ${fullPath}`);
         }

@@ -70,27 +70,38 @@ export function startWebhookServer(mediaRootPath: string): WebhookServerHandle {
         if (payload.action === 'on_publish') {
           logger.info(`[SRS] Stream published: ${streamPath} (${mediatype})`);
 
-          const outputDir = path.join(mediaRootPath, streamPath);
-          if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir, { recursive: true });
-          }
+          try {
+            const outputDir = path.join(mediaRootPath, streamPath);
+            if (!fs.existsSync(outputDir)) {
+              fs.mkdirSync(outputDir, { recursive: true });
+            }
 
-          dirHandler.acquireDirectory(mediaRootPath, streamPath);
-          dirHandler.handleStart(mediaRootPath, streamPath, mediatype);
+            await dirHandler.acquireDirectory(mediaRootPath, streamPath);
+            dirHandler.handleStart(mediaRootPath, streamPath, mediatype);
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end('0');
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            logger.error(`[SRS] Rejected stream publish ${streamPath}: ${msg}`);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end('1'); // Non-zero tells SRS to reject the publish
+          }
         } else if (payload.action === 'on_unpublish') {
           logger.info(`[SRS] Stream unpublished: ${streamPath}`);
 
-          try {
-            await dirHandler.handleStop(mediaRootPath, streamPath);
-            dirHandler.releaseDirectory(mediaRootPath, streamPath);
-          } catch (error) {
-            const msg = error instanceof Error ? error.message : 'Unknown error';
-            logger.error(`[SRS] Error during stream stop: ${msg}`);
-          }
-        }
+          // Respond to SRS immediately — drain runs in background
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end('0');
 
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end('0');
+          dirHandler.handleStop(mediaRootPath, streamPath).catch(error => {
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            logger.error(`[SRS] Error during stream stop ${streamPath}: ${msg}`);
+          });
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end('0');
+        }
       } else if (req.method === 'POST' && req.url === '/api/v1/hls') {
         const body = await parseBody(req);
         const payload: SrsHlsPayload = JSON.parse(body);

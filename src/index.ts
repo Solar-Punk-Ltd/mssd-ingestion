@@ -31,8 +31,6 @@ async function gracefulShutdown(signal: string) {
       webhookServer = undefined;
     }
 
-    DirectoryHandler.stopCleanup();
-
     logger.info('Graceful shutdown completed');
     process.exit(0);
   } catch (error) {
