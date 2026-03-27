@@ -44,8 +44,8 @@ vhost __defaultVhost__ {
 
     http_hooks {
         enabled         on;
-        on_publish      http://host.docker.internal:WEBHOOK_PORT_PLACEHOLDER/api/v1/streams;
-        on_unpublish    http://host.docker.internal:WEBHOOK_PORT_PLACEHOLDER/api/v1/streams;
-        on_hls          http://host.docker.internal:WEBHOOK_PORT_PLACEHOLDER/api/v1/hls;
+        on_publish      http://localhost:WEBHOOK_PORT_PLACEHOLDER/api/v1/streams;
+        on_unpublish    http://localhost:WEBHOOK_PORT_PLACEHOLDER/api/v1/streams;
+        on_hls          http://localhost:WEBHOOK_PORT_PLACEHOLDER/api/v1/hls;
     }
 }
