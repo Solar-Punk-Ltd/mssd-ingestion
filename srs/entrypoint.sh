@@ -12,6 +12,10 @@ else
   sed -i '/pbkeylen/d' "$CONF"
 fi
 
+# Resolve host gateway — use container's default route (works on all Docker network modes)
+DOCKER_HOST_IP=$(ip route | awk '/default/ { print $3 }')
+sed -i "s/host.docker.internal/$DOCKER_HOST_IP/g" "$CONF"
+
 # Substitute webhook port
 sed -i "s/WEBHOOK_PORT_PLACEHOLDER/${WEBHOOK_PORT:-3000}/g" "$CONF"
 
