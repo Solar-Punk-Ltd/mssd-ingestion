@@ -2,6 +2,7 @@ services:
   srs:
     image: ossrs/srs:6
     container_name: srs
+    user: "${UID:-1000}:${GID:-1000}"
     restart: unless-stopped
     env_file:
       - ../.env
